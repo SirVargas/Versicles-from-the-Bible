@@ -8,9 +8,36 @@
   <style>
     body { background: #121212; color: #e0e0e0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; overflow: hidden; }
     #verse-container { padding: 30px; max-width: 600px; width: 90%; }
-    #verse { font-size: 1.6rem; font-style: italic; margin-bottom: 25px; line-height: 1.5; text-shadow: 0px 2px 4px rgba(0,0,0,0.5); }
-    #reference { font-weight: bold; margin-top: 15px; color: #bb86fc; font-size: 1.2rem; letter-spacing: 1px; text-transform: uppercase; }
-    #btn-notify { margin-top: 40px; padding: 15px 30px; background: #03dac6; border: none; cursor: pointer; border-radius: 50px; color: #000; font-weight: 800; font-size: 0.9rem; box-shadow: 0 4px 15px rgba(3, 218, 198, 0.4); }
+    
+    #verse { 
+      font-size: 1.6rem; 
+      font-style: italic; 
+      margin-bottom: 25px; 
+      line-height: 1.5; 
+      text-shadow: 0px 2px 4px rgba(0,0,0,0.5);
+    }
+    
+    #reference { 
+      font-weight: bold; 
+      margin-top: 15px; 
+      color: #bb86fc; 
+      font-size: 1.2rem; 
+      letter-spacing: 1px; 
+      text-transform: uppercase;
+    }
+    
+    #btn-notify { 
+      margin-top: 40px; 
+      padding: 15px 30px; 
+      background: #03dac6; 
+      border: none; 
+      cursor: pointer; 
+      border-radius: 50px; 
+      color: #000; 
+      font-weight: 800; 
+      font-size: 0.9rem; 
+      box-shadow: 0 4px 15px rgba(3, 218, 198, 0.4);
+    }
   </style>
 </head>
 <body>
@@ -23,7 +50,8 @@
   <script src="verses.js"></script>
 
   <script>
-    const UPDATE_MINUTES = 60; 
+    // --- CONFIGURACIÓN ---
+    const UPDATE_MINUTES = 30; // Actualizado a 30 minutos como pediste
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js');
@@ -34,12 +62,12 @@
         if (permission === 'granted') {
           document.getElementById('btn-notify').style.display = 'none';
           loadVerse(true); 
-          alert("Activado.");
+          alert("Activado. Bloquea tu celular para ver.");
         }
       });
     }
 
-    // --- TRUCO: Función para convertir texto a NEGRITA UNICODE ---
+    // Convertir a Negrita (Unicode)
     function toBold(text) {
       const normal = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
       const bold   = '𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗';
@@ -53,34 +81,47 @@
     }
 
     function loadVerse(forceUpdate = false) {
-      // Base de datos de respaldo
       const defaultDB = [{r:"Juan 3:16", t:"Porque de tal manera amó Dios al mundo..."}];
       const db = (typeof versesDB !== 'undefined' && versesDB.length > 0) ? versesDB : defaultDB;
 
+      // 1. REVISAR SI HAY UNO GUARDADO RECIENTE
       const savedData = localStorage.getItem('dailyVerseData');
       if (savedData && !forceUpdate) {
           try {
             const parsed = JSON.parse(savedData);
             const diff = (Date.now() - parsed.timestamp) / 1000 / 60; 
+            
+            // Si no han pasado los 30 minutos...
             if (diff < UPDATE_MINUTES && parsed.text) {
                 updateUI(parsed.text, parsed.reference);
-                return; 
+                
+                // --- CAMBIO CLAVE AQUÍ ---
+                // Volvemos a lanzar la notificación AUNQUE sea el mismo versículo
+                sendNotification(parsed.text, parsed.reference);
+                
+                return; // Terminamos aquí
             }
           } catch(e) {}
       }
 
-      // Anti-repetición
+      // 2. Si no hay o ya pasó el tiempo: ELEGIR NUEVO
       let seenVerses = JSON.parse(localStorage.getItem('seenVerses') || "[]");
       let availableVerses = db.filter(v => !seenVerses.includes(v.r));
-      if (availableVerses.length === 0) { seenVerses = []; availableVerses = db; }
+      
+      if (availableVerses.length === 0) {
+          seenVerses = [];
+          availableVerses = db;
+      }
 
       const randomItem = availableVerses[Math.floor(Math.random() * availableVerses.length)];
       
       const dataToSave = { text: randomItem.t, reference: randomItem.r, timestamp: Date.now() };
       localStorage.setItem('dailyVerseData', JSON.stringify(dataToSave));
+      
       seenVerses.push(randomItem.r);
       localStorage.setItem('seenVerses', JSON.stringify(seenVerses));
       
+      // 3. Mostrar y Notificar
       updateUI(randomItem.t, randomItem.r);
       sendNotification(randomItem.t, randomItem.r);
     }
@@ -94,7 +135,6 @@
 
     function sendNotification(text, title) {
       if (Notification.permission === 'granted') {
-        // AQUÍ APLICAMOS EL TRUCO: Convertimos el título a Negrita
         const boldTitle = toBold(title); 
         
         navigator.serviceWorker.ready.then(registration => {
@@ -109,6 +149,7 @@
       }
     }
     
+    // Iniciar
     loadVerse();
     
     if (Notification.permission === 'granted') {
