@@ -26,10 +26,9 @@
     // --- CONFIGURACIÓN ---
     const UPDATE_MINUTES = 30; 
 
-    // --- CONFIGURACIÓN DE ESTILO ---
-    // Opciones disponibles: 'bold' (Negrita), 'italic' (Itálica), 'script' (Cursiva), 'mono' (Monoespacio), 'normal'
-    const TITLE_STYLE = 'bold';   // Estilo para la Cita (Ej: Juan 3:16)
-    const BODY_STYLE  = 'normal'; // Estilo para el Texto del versículo
+    // IMPORTANTE: Ponemos 'normal' porque tu celular no soportó el 'bold' (salían rombos)
+    const TITLE_STYLE = 'normal';   
+    const BODY_STYLE  = 'normal'; 
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js');
@@ -45,7 +44,7 @@
       });
     }
 
-    // --- MAGIA UNICODE: Transformador de Fuentes ---
+    // (Función applyStyle mantenida por si quieres probar 'italic' en el futuro, pero desactivada por ahora)
     function applyStyle(text, type) {
       const map = {
         normal: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
@@ -54,9 +53,7 @@
         script: '𝒶𝒷𝒸𝒹𝑒𝒻𝑔𝒽𝒾𝒿𝓀𝓁𝓂𝓃𝑜𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏𝒜𝐵𝒞𝒟𝐸𝐹𝒢𝐻𝐼𝒥𝒦𝐿𝑀𝒩𝒪𝒫𝒬𝑅𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵0123456789',
         mono:   '𝚊𝚋𝚌𝚍𝚎𝚏𝚐𝚑𝚒𝚓𝚔𝚕𝚖𝚗𝚘𝚙𝚚𝚛𝚜𝚝𝚞𝚟𝚠𝚡𝚢𝚣𝙰𝙱𝙲𝙳𝙴𝙵𝙶𝙷𝙸𝙹𝙺𝙻𝙼𝙽𝙾𝙿𝚀𝚁𝚂𝚃𝚄𝚅𝚆𝚇𝚈𝚉𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿'
       };
-
       if (!map[type] || type === 'normal') return text;
-
       let res = '';
       for (let i = 0; i < text.length; i++) {
         const char = text[i];
@@ -78,17 +75,14 @@
             
             if (diff < UPDATE_MINUTES && parsed.text) {
                 updateUI(parsed.text, parsed.reference);
-                // Forzar notificación aunque sea el mismo (Tu petición)
                 sendNotification(parsed.text, parsed.reference);
                 return; 
             }
           } catch(e) {}
       }
 
-      // Elegir nuevo
       let seenVerses = JSON.parse(localStorage.getItem('seenVerses') || "[]");
       let availableVerses = db.filter(v => !seenVerses.includes(v.r));
-      
       if (availableVerses.length === 0) { seenVerses = []; availableVerses = db; }
 
       const randomItem = availableVerses[Math.floor(Math.random() * availableVerses.length)];
@@ -112,8 +106,6 @@
     function sendNotification(text, title) {
       if (Notification.permission === 'granted') {
         
-        // APLICAMOS LOS ESTILOS ELEGIDOS
-        // Tip: Agregamos un Emoji al inicio del título para darle color ✝️ 📖 ✨
         const styledTitle = "📖 " + applyStyle(title, TITLE_STYLE);
         const styledBody  = applyStyle(text, BODY_STYLE);
 
@@ -121,11 +113,14 @@
           registration.showNotification(styledTitle, { 
             body: styledBody, 
             
-            // Icono lateral (Puedes cambiarlo por uno de otro color si quieres)
+            // Icono GRANDE (a la izquierda)
             icon: 'https://cdn-icons-png.flaticon.com/512/2665/2665038.png', 
             
-            // IMAGEN GRANDE (Big Picture) - Esto añade impacto visual
-            // Usamos una imagen genérica de naturaleza o cielo que se ve muy bien
+            // --- AQUÍ ESTÁ EL CAMBIO PARA EL ÍCONO PEQUEÑO ---
+            // 'badge': Es el ícono pequeñito que sale arriba a la derecha (monocromo)
+            badge: 'https://cdn-icons-png.flaticon.com/512/25/25667.png', // Icono de cruz simple
+            
+            // Imagen de fondo (Foto grande)
             image: 'https://images.unsplash.com/photo-1504052434569-70ad5836ab65?w=500&q=80',
             
             tag: 'daily-verse', 
