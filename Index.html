@@ -10,30 +10,51 @@
     #verse-container { padding: 20px; }
     #verse { font-size: 1.8rem; font-style: italic; }
     #reference { font-weight: bold; margin-top: 10px; color: #bb86fc; }
+    #test-button { margin-top: 20px; padding: 10px 15px; background: #bb86fc; border: none; cursor: pointer; border-radius: 5px; color: black; }
   </style>
 </head>
 <body>
   <div id="verse-container">
     <div id="verse">Cargando...</div>
     <div id="reference"></div>
+    <button id="test-button" onclick="fetchVerse(true)">Probar API</button>
   </div>
 
   <script>
-    // Registro del Service Worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js');
     }
 
-    async function fetchVerse() {
+    async function fetchVerse(isManualTest = false) {
+      const verseDiv = document.getElementById('verse');
+      const refDiv = document.getElementById('reference');
+      verseDiv.innerText = isManualTest ? "Probando..." : "Cargando...";
+      refDiv.innerText = "";
+
       try {
-        // API gratuita: Provee versículos aleatorios
-        const response = await fetch('bible-api.com'); 
+        // Usa la URL relativa si implementaste el proxy en Netlify
+        const response = await fetch('/api/random?translation=kjv'); 
+        
+        if (!response.ok) {
+            throw new Error('Error de red o CORS: ' + response.statusText);
+        }
+        
         const data = await response.json();
-        document.getElementById('verse').innerText = `"${data.text.trim()}"`;
-        document.getElementById('reference').innerText = data.reference;
+        verseDiv.innerText = `"${data.text.trim()}"`;
+        refDiv.innerText = data.reference;
+        if (isManualTest) console.log("Petición exitosa:", data);
+
       } catch (e) {
-        document.getElementById('verse').innerText = "Conéctate para recibir tu palabra.";
+        verseDiv.innerText = "¡Error de conexión! Revisa la consola para detalles.";
+        console.error("Detalles del error:", e);
       }
+    }
+    
+    // Llama a la función al cargar la página por primera vez
+    fetchVerse(); 
+  </script>
+</body>
+</html>
     }
     fetchVerse();
   </script>
