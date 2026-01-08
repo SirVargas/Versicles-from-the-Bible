@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.json">
+  <title>Versículo Diario</title>
+  <style>
+    body { background: #121212; color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; text-align: center; }
+    #verse-container { padding: 20px; }
+    #verse { font-size: 1.8rem; font-style: italic; }
+    #reference { font-weight: bold; margin-top: 10px; color: #bb86fc; }
+  </style>
+</head>
+<body>
+  <div id="verse-container">
+    <div id="verse">Cargando...</div>
+    <div id="reference"></div>
+  </div>
+
+  <script>
+    // Registro del Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+
+    async function fetchVerse() {
+      try {
+        // API gratuita: Provee versículos aleatorios
+        const response = await fetch('bible-api.com'); 
+        const data = await response.json();
+        document.getElementById('verse').innerText = `"${data.text.trim()}"`;
+        document.getElementById('reference').innerText = data.reference;
+      } catch (e) {
+        document.getElementById('verse').innerText = "Conéctate para recibir tu palabra.";
+      }
+    }
+    fetchVerse();
+  </script>
+</body>
+</html>
