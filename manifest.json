@@ -7,7 +7,7 @@
   "theme_color": "#bb86fc",
   "icons": [
     {
-      "src": "cdn-icons-png.flaticon.com",
+      "src": "img/noti-icon.png",
       "sizes": "512x512",
       "type": "image/png"
     }
