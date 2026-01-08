@@ -20,13 +20,10 @@
     <button id="btn-notify" onclick="enableNotifications()">🔔 ACTIVAR WIDGET</button>
   </div>
 
-  <script src="verses.js"></script>
+  <script src="js/verses.js"></script>
 
   <script>
-    // --- CONFIGURACIÓN ---
     const UPDATE_MINUTES = 30; 
-
-    // IMPORTANTE: Ponemos 'normal' porque tu celular no soportó el 'bold' (salían rombos)
     const TITLE_STYLE = 'normal';   
     const BODY_STYLE  = 'normal'; 
 
@@ -44,7 +41,6 @@
       });
     }
 
-    // (Función applyStyle mantenida por si quieres probar 'italic' en el futuro, pero desactivada por ahora)
     function applyStyle(text, type) {
       const map = {
         normal: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
@@ -105,7 +101,6 @@
 
     function sendNotification(text, title) {
       if (Notification.permission === 'granted') {
-        
         const styledTitle = "📖 " + applyStyle(title, TITLE_STYLE);
         const styledBody  = applyStyle(text, BODY_STYLE);
 
@@ -113,14 +108,10 @@
           registration.showNotification(styledTitle, { 
             body: styledBody, 
             
-            // Icono GRANDE (a la izquierda)
-            icon: 'https://cdn-icons-png.flaticon.com/512/2665/2665038.png', 
+            // RUTA CORRECTA A LA IMAGEN
+            icon: 'img/icon.png', 
+            badge: 'img/icon.png', 
             
-            // --- AQUÍ ESTÁ EL CAMBIO PARA EL ÍCONO PEQUEÑO ---
-            // 'badge': Es el ícono pequeñito que sale arriba a la derecha (monocromo)
-            badge: 'https://cdn-icons-png.flaticon.com/512/25/25667.png', // Icono de cruz simple
-            
-            // Imagen de fondo (Foto grande)
             image: 'https://images.unsplash.com/photo-1504052434569-70ad5836ab65?w=500&q=80',
             
             tag: 'daily-verse', 
