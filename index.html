@@ -7,56 +7,65 @@
   <title>Versículo Diario</title>
   <style>
     body { background: #121212; color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; text-align: center; }
-    #verse-container { padding: 20px; }
-    #verse { font-size: 1.8rem; font-style: italic; margin-bottom: 10px; }
-    #reference { font-weight: bold; margin-top: 10px; color: #bb86fc; font-size: 1.2rem;}
-    #btn-notify { margin-top: 30px; padding: 12px 20px; background: #bb86fc; border: none; cursor: pointer; border-radius: 20px; color: black; font-weight: bold; }
+    #verse-container { padding: 20px; max-width: 600px; }
+    #verse { font-size: 1.5rem; font-style: italic; margin-bottom: 15px; line-height: 1.4; }
+    #reference { font-weight: bold; margin-top: 10px; color: #bb86fc; font-size: 1.2rem; }
+    
+    /* Botones */
+    button { margin-top: 15px; padding: 12px 25px; border: none; cursor: pointer; border-radius: 25px; font-weight: bold; font-size: 1rem; display: block; margin-left: auto; margin-right: auto; }
+    #btn-notify { background: #bb86fc; color: #000; }
+    
+    /* ESTILO BOTÓN DEBUG (ROJO) */
+    #btn-debug { background: #ff4444; color: white; margin-top: 30px; border: 2px solid white; }
   </style>
 </head>
 <body>
   <div id="verse-container">
-    <div id="verse">Cargando inspiración...</div>
+    <div id="verse">Buscando palabra...</div>
     <div id="reference"></div>
     
-    <button id="btn-notify" onclick="enableNotifications()">🔔 Activar Notificaciones</button>
+    <button id="btn-notify" onclick="enableNotifications()">🔔 Activar Versículo en Pantalla</button>
+
+    <button id="btn-debug" onclick="fetchVerse(true)">🛠 DEBUG: Forzar Nuevo Versículo</button>
   </div>
 
   <script>
-    // Configuración
-    const UPDATE_MINUTES = 30; 
-    // Usamos la API oficial de versículos random en español (Reina Valera 1960)
-    // Nota: bible-api.com a veces devuelve en inglés si no se especifica bien, 
-    // pero para asegurar español usaremos un truco o la API 'bible-api.com/?random=verse'
-    // Para asegurar random real usamos el endpoint de data:
-    //const API_URL = "https://bible-api.com/data/kjv/random"; 
-    const API_URL = "https://bible-api.com/?random=verse&translation=rvr1960";
+    // --- CONFIGURACIÓN ---
+    const UPDATE_MINUTES = 60; 
+    
+    // CORRECCIÓN IMPORTANTE: Esta URL sí funciona en Español y con la estructura correcta
+    const API_URL = "https://bible-api.com/?random=verse&translation=rvr1960"; 
 
-    // Registrar Service Worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js');
     }
 
-    // 1. Función para pedir permiso de mostrar en pantalla de bloqueo
     function enableNotifications() {
       Notification.requestPermission().then(permission => {
         if (permission === 'granted') {
-          alert("¡Permiso concedido! Verás los versículos en tu notificaciones.");
-          fetchVerse(true); // Forzar actualización para probar
           document.getElementById('btn-notify').style.display = 'none';
+          fetchVerse(true); 
+          alert("Permiso concedido.");
         }
       });
     }
 
-    // 2. Lógica principal
+    // Lógica Principal
     async function fetchVerse(forceUpdate = false) {
       const verseDiv = document.getElementById('verse');
       const refDiv = document.getElementById('reference');
       
-      // Chequeo de caché (localStorage)
+      // Si es manual (botón debug), mostramos mensaje de carga
+      if(forceUpdate) {
+        verseDiv.innerText = "Conectando con API...";
+        refDiv.innerText = "";
+      }
+
+      // Revisar caché solo si NO estamos forzando (forceUpdate es false)
       const savedData = localStorage.getItem('dailyVerseData');
       if (savedData && !forceUpdate) {
           const parsed = JSON.parse(savedData);
-          const diff = (Date.now() - parsed.timestamp) / 1000 / 60;
+          const diff = (Date.now() - parsed.timestamp) / 1000 / 60; 
           
           if (diff < UPDATE_MINUTES) {
               updateUI(parsed.text, parsed.reference);
@@ -64,26 +73,27 @@
           }
       }
 
-      // Descargar nuevo
+      // Descargar de la API
       try {
-        // Pedimos random a la API
         const response = await fetch(API_URL);
+        if (!response.ok) throw new Error('Error conectando a la API');
+        
         const data = await response.json();
         
         // Limpieza de texto
-        const cleanText = data.text.trim().replace(/\n/g, ' ');
+        const cleanText = data.text.trim().replace(/\s+/g, ' ');
         
-        // Guardar
+        // Guardar en memoria
         const dataToSave = { text: cleanText, reference: data.reference, timestamp: Date.now() };
         localStorage.setItem('dailyVerseData', JSON.stringify(dataToSave));
         
-        // Actualizar UI y Notificación
+        // Actualizar UI
         updateUI(cleanText, data.reference);
         sendNotification(cleanText, data.reference);
 
       } catch (e) {
         console.error(e);
-        verseDiv.innerText = "Conectando...";
+        verseDiv.innerText = "Error: " + e.message;
       }
     }
 
@@ -92,28 +102,22 @@
       document.getElementById('reference').innerText = reference;
     }
 
-    // 3. Función Mágica para la Pantalla de Bloqueo
     function sendNotification(text, title) {
       if (Notification.permission === 'granted') {
         navigator.serviceWorker.ready.then(registration => {
-          registration.showNotification(title, {
-            body: text,
-            icon: 'https://cdn-icons-png.flaticon.com/512/2665/2665038.png', // Icono genérico
-            tag: 'daily-verse', // IMPORTANTE: Esto evita que se acumulen, reemplaza la anterior
-            requireInteraction: true, // Intenta mantenerla visible
-            vibrate: [200, 100, 200]
+          registration.showNotification(title, { 
+            body: text, 
+            icon: 'https://cdn-icons-png.flaticon.com/512/2665/2665038.png', 
+            tag: 'daily-verse', 
+            requireInteraction: true
           });
         });
       }
     }
     
-    // Iniciar
+    // Iniciar al abrir
     fetchVerse();
     
-    // Revisar cada minuto si toca actualizar
-    setInterval(() => fetchVerse(), 60000); 
-
-    // Ocultar botón si ya tienen permiso
     if (Notification.permission === 'granted') {
       document.getElementById('btn-notify').style.display = 'none';
     }
