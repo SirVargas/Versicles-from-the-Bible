@@ -3,7 +3,8 @@ const CACHE_NAME = 'biblia-cache-v2';
 const urlsToCache = [
   './',
   './index.html',
-  './verses.js',       // <--- IMPORTANTE: Guardamos la base de datos
+  './js/verses.js',       // <--- IMPORTANTE: Guardamos la base de datos
+  './img/icon.png',
   './manifest.json'
 ];
 
