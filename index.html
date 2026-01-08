@@ -28,7 +28,8 @@
     // Nota: bible-api.com a veces devuelve en inglés si no se especifica bien, 
     // pero para asegurar español usaremos un truco o la API 'bible-api.com/?random=verse'
     // Para asegurar random real usamos el endpoint de data:
-    const API_URL = "https://bible-api.com/data/kjv/random"; 
+    //const API_URL = "https://bible-api.com/data/kjv/random"; 
+    const API_URL = "https://bible-api.com/?random=verse&translation=rvr1960";
 
     // Registrar Service Worker
     if ('serviceWorker' in navigator) {
