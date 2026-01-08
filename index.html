@@ -6,35 +6,53 @@
   <link rel="manifest" href="manifest.json">
   <title>Versículo Diario</title>
   <style>
-    body { background: #121212; color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; text-align: center; }
-    #verse-container { padding: 20px; max-width: 600px; }
-    #verse { font-size: 1.5rem; font-style: italic; margin-bottom: 15px; line-height: 1.4; }
-    #reference { font-weight: bold; margin-top: 10px; color: #bb86fc; font-size: 1.2rem; }
+    body { background: #121212; color: #e0e0e0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; overflow: hidden; }
+    #verse-container { padding: 30px; max-width: 600px; width: 90%; }
     
-    /* Botones */
-    button { margin-top: 15px; padding: 12px 25px; border: none; cursor: pointer; border-radius: 25px; font-weight: bold; font-size: 1rem; display: block; margin-left: auto; margin-right: auto; }
-    #btn-notify { background: #bb86fc; color: #000; }
+    #verse { 
+      font-size: 1.6rem; 
+      font-style: italic; 
+      margin-bottom: 25px; 
+      line-height: 1.5; 
+      text-shadow: 0px 2px 4px rgba(0,0,0,0.5);
+      transition: opacity 0.5s ease-in-out;
+    }
     
-    /* ESTILO BOTÓN DEBUG (ROJO) */
-    #btn-debug { background: #ff4444; color: white; margin-top: 30px; border: 2px solid white; }
+    #reference { 
+      font-weight: bold; 
+      margin-top: 15px; 
+      color: #bb86fc; 
+      font-size: 1.2rem; 
+      letter-spacing: 1px; 
+      text-transform: uppercase;
+    }
+    
+    #btn-notify { 
+      margin-top: 40px; 
+      padding: 15px 30px; 
+      background: #03dac6; 
+      border: none; 
+      cursor: pointer; 
+      border-radius: 50px; 
+      color: #000; 
+      font-weight: 800; 
+      font-size: 0.9rem; 
+      box-shadow: 0 4px 15px rgba(3, 218, 198, 0.4);
+    }
   </style>
 </head>
 <body>
   <div id="verse-container">
-    <div id="verse">Buscando palabra...</div>
+    <div id="verse">Abriendo las Escrituras...</div>
     <div id="reference"></div>
-    
-    <button id="btn-notify" onclick="enableNotifications()">🔔 Activar Versículo en Pantalla</button>
-
-    <button id="btn-debug" onclick="fetchVerse(true)">🛠 DEBUG: Forzar Nuevo Versículo</button>
+    <button id="btn-notify" onclick="enableNotifications()">🔔 ACTIVAR WIDGET DIARIO</button>
   </div>
+
+  <script src="verses.js"></script>
 
   <script>
     // --- CONFIGURACIÓN ---
-    const UPDATE_MINUTES = 60; 
-    
-    // CORRECCIÓN IMPORTANTE: Esta URL sí funciona en Español y con la estructura correcta
-    const API_URL = "https://bible-api.com/?random=verse&translation=rvr1960"; 
+    const UPDATE_MINUTES = 60; // Cambia cada hora
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js');
@@ -44,24 +62,22 @@
       Notification.requestPermission().then(permission => {
         if (permission === 'granted') {
           document.getElementById('btn-notify').style.display = 'none';
-          fetchVerse(true); 
-          alert("Permiso concedido.");
+          loadVerse(true); 
+          alert("¡Listo! Bloquea tu celular para ver el resultado.");
         }
       });
     }
 
-    // Lógica Principal
-    async function fetchVerse(forceUpdate = false) {
-      const verseDiv = document.getElementById('verse');
-      const refDiv = document.getElementById('reference');
+    // LÓGICA PRINCIPAL
+    function loadVerse(forceUpdate = false) {
       
-      // Si es manual (botón debug), mostramos mensaje de carga
-      if(forceUpdate) {
-        verseDiv.innerText = "Conectando con API...";
-        refDiv.innerText = "";
+      // 0. Validar que verses.js cargó bien
+      if (typeof versesDB === 'undefined' || versesDB.length === 0) {
+        document.getElementById('verse').innerText = "Error: No se encontró el archivo verses.js";
+        return;
       }
 
-      // Revisar caché solo si NO estamos forzando (forceUpdate es false)
+      // 1. Revisar Caché del Versículo Actual
       const savedData = localStorage.getItem('dailyVerseData');
       if (savedData && !forceUpdate) {
           const parsed = JSON.parse(savedData);
@@ -73,33 +89,44 @@
           }
       }
 
-      // Descargar de la API
-      try {
-        const response = await fetch(API_URL);
-        if (!response.ok) throw new Error('Error conectando a la API');
-        
-        const data = await response.json();
-        
-        // Limpieza de texto
-        const cleanText = data.text.trim().replace(/\s+/g, ' ');
-        
-        // Guardar en memoria
-        const dataToSave = { text: cleanText, reference: data.reference, timestamp: Date.now() };
-        localStorage.setItem('dailyVerseData', JSON.stringify(dataToSave));
-        
-        // Actualizar UI
-        updateUI(cleanText, data.reference);
-        sendNotification(cleanText, data.reference);
-
-      } catch (e) {
-        console.error(e);
-        verseDiv.innerText = "Error: " + e.message;
+      // 2. SISTEMA ANTI-REPETICIÓN
+      // Recuperamos la lista de "vistos"
+      let seenVerses = JSON.parse(localStorage.getItem('seenVerses') || "[]");
+      
+      // Filtramos los disponibles (Total - Vistos)
+      let availableVerses = versesDB.filter(v => !seenVerses.includes(v.r));
+      
+      // Si ya vimos todos, reseteamos la memoria para empezar de nuevo
+      if (availableVerses.length === 0) {
+          seenVerses = [];
+          availableVerses = versesDB;
       }
+
+      // 3. Elegir uno al azar de los DISPONIBLES
+      const randomItem = availableVerses[Math.floor(Math.random() * availableVerses.length)];
+      
+      // 4. Guardar datos
+      // Guardamos el versículo actual con hora
+      const dataToSave = { text: randomItem.t, reference: randomItem.r, timestamp: Date.now() };
+      localStorage.setItem('dailyVerseData', JSON.stringify(dataToSave));
+      
+      // Agregamos este a la lista de "vistos"
+      seenVerses.push(randomItem.r);
+      localStorage.setItem('seenVerses', JSON.stringify(seenVerses));
+      
+      // 5. Mostrar
+      updateUI(randomItem.t, randomItem.r);
+      sendNotification(randomItem.t, randomItem.r);
     }
 
     function updateUI(text, reference) {
-      document.getElementById('verse').innerText = `"${text}"`;
-      document.getElementById('reference').innerText = reference;
+      const verseDiv = document.getElementById('verse');
+      verseDiv.style.opacity = 0;
+      setTimeout(() => {
+        verseDiv.innerText = `"${text}"`;
+        document.getElementById('reference').innerText = reference;
+        verseDiv.style.opacity = 1;
+      }, 300);
     }
 
     function sendNotification(text, title) {
@@ -109,18 +136,21 @@
             body: text, 
             icon: 'https://cdn-icons-png.flaticon.com/512/2665/2665038.png', 
             tag: 'daily-verse', 
-            requireInteraction: true
+            requireInteraction: true,
+            silent: false
           });
         });
       }
     }
     
-    // Iniciar al abrir
-    fetchVerse();
+    // Iniciar
+    loadVerse();
     
     if (Notification.permission === 'granted') {
       document.getElementById('btn-notify').style.display = 'none';
     }
+    
+    setInterval(() => loadVerse(), 60000); 
   </script>
 </body>
 </html>
