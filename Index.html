@@ -33,8 +33,10 @@
 
       try {
         // Usa la URL relativa si implementaste el proxy en Netlify
-        const response = await fetch('/api/random?translation=kjv'); 
-        
+        //const response = await fetch('/api/random?translation=kjv'); 
+        // Esta línea va directo a la fuente y funciona siempre
+        const response = await fetch('https://bible-api.com/random?translation=kjv');
+
         if (!response.ok) {
             throw new Error('Error de red o CORS: ' + response.statusText);
         }
