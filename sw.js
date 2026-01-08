@@ -1,12 +1,29 @@
 self.addEventListener('install', (e) => {
-  console.log('Service Worker Instalado');
+  self.skipWaiting();
 });
 
-// Lógica para mostrar notificación cada vez que se abre la app
 self.addEventListener('activate', (e) => {
-  self.registration.showNotification("Palabra del Cielo", {
-    body: "Toca para leer el versículo de esta hora.",
-    icon: "cdn-icons-png.flaticon.com",
-    tag: "daily-verse"
-  });
+  console.log('Service Worker Activo');
+});
+
+// Cuando el usuario toca la notificación en la pantalla de bloqueo
+self.addEventListener('notificationclick', function(event) {
+  event.notification.close(); // Cierra la notificación
+  
+  // Abre la app
+  event.waitUntil(
+    clients.matchAll({type: 'window'}).then( windowClients => {
+      // Si ya está abierta, enfócala
+      for (var i = 0; i < windowClients.length; i++) {
+        var client = windowClients[i];
+        if (client.url === '/' && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      // Si no, abre una nueva
+      if (clients.openWindow) {
+        return clients.openWindow('/');
+      }
+    })
+  );
 });
