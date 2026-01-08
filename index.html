@@ -15,7 +15,6 @@
       margin-bottom: 25px; 
       line-height: 1.5; 
       text-shadow: 0px 2px 4px rgba(0,0,0,0.5);
-      transition: opacity 0.5s ease-in-out;
     }
     
     #reference { 
@@ -43,16 +42,16 @@
 </head>
 <body>
   <div id="verse-container">
-    <div id="verse">Abriendo las Escrituras...</div>
+    <div id="verse">Cargando inspiración...</div>
     <div id="reference"></div>
-    <button id="btn-notify" onclick="enableNotifications()">🔔 ACTIVAR WIDGET DIARIO</button>
+    <button id="btn-notify" onclick="enableNotifications()">🔔 ACTIVAR NOTIFICACIÓN DIARIA</button>
   </div>
 
   <script src="verses.js"></script>
 
   <script>
     // --- CONFIGURACIÓN ---
-    const UPDATE_MINUTES = 60; // Cambia cada hora
+    const UPDATE_MINUTES = 60; // Frecuencia de actualización
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js');
@@ -63,70 +62,65 @@
         if (permission === 'granted') {
           document.getElementById('btn-notify').style.display = 'none';
           loadVerse(true); 
-          alert("¡Listo! Bloquea tu celular para ver el resultado.");
+          alert("Activado. Bloquea tu celular para ver el versículo.");
         }
       });
     }
 
-    // LÓGICA PRINCIPAL
+    // LÓGICA PRINCIPAL (Blindada contra errores)
     function loadVerse(forceUpdate = false) {
       
-      // 0. Validar que verses.js cargó bien
-      if (typeof versesDB === 'undefined' || versesDB.length === 0) {
-        document.getElementById('verse').innerText = "Error: No se encontró el archivo verses.js";
-        return;
-      }
+      // 0. Base de datos de respaldo por si falla verses.js
+      const defaultDB = [{r:"Juan 3:16", t:"Porque de tal manera amó Dios al mundo..."}];
+      const db = (typeof versesDB !== 'undefined' && versesDB.length > 0) ? versesDB : defaultDB;
 
-      // 1. Revisar Caché del Versículo Actual
+      // 1. Revisar Caché (Para no cambiar si recargas)
       const savedData = localStorage.getItem('dailyVerseData');
       if (savedData && !forceUpdate) {
-          const parsed = JSON.parse(savedData);
-          const diff = (Date.now() - parsed.timestamp) / 1000 / 60; 
-          
-          if (diff < UPDATE_MINUTES) {
-              updateUI(parsed.text, parsed.reference);
-              return; 
+          try {
+            const parsed = JSON.parse(savedData);
+            const diff = (Date.now() - parsed.timestamp) / 1000 / 60; 
+            
+            // Si el dato es válido y reciente, úsalo
+            if (diff < UPDATE_MINUTES && parsed.text) {
+                updateUI(parsed.text, parsed.reference);
+                return; 
+            }
+          } catch(e) {
+            console.error("Error leyendo caché", e);
           }
       }
 
-      // 2. SISTEMA ANTI-REPETICIÓN
-      // Recuperamos la lista de "vistos"
+      // 2. LÓGICA ANTI-REPETICIÓN
       let seenVerses = JSON.parse(localStorage.getItem('seenVerses') || "[]");
+      let availableVerses = db.filter(v => !seenVerses.includes(v.r));
       
-      // Filtramos los disponibles (Total - Vistos)
-      let availableVerses = versesDB.filter(v => !seenVerses.includes(v.r));
-      
-      // Si ya vimos todos, reseteamos la memoria para empezar de nuevo
       if (availableVerses.length === 0) {
-          seenVerses = [];
-          availableVerses = versesDB;
+          seenVerses = []; // Reiniciar si ya vimos todos
+          availableVerses = db;
       }
 
-      // 3. Elegir uno al azar de los DISPONIBLES
+      // 3. Elegir nuevo
       const randomItem = availableVerses[Math.floor(Math.random() * availableVerses.length)];
       
-      // 4. Guardar datos
-      // Guardamos el versículo actual con hora
+      // 4. Guardar
       const dataToSave = { text: randomItem.t, reference: randomItem.r, timestamp: Date.now() };
       localStorage.setItem('dailyVerseData', JSON.stringify(dataToSave));
       
-      // Agregamos este a la lista de "vistos"
       seenVerses.push(randomItem.r);
       localStorage.setItem('seenVerses', JSON.stringify(seenVerses));
       
-      // 5. Mostrar
+      // 5. Mostrar y Notificar
       updateUI(randomItem.t, randomItem.r);
       sendNotification(randomItem.t, randomItem.r);
     }
 
     function updateUI(text, reference) {
-      const verseDiv = document.getElementById('verse');
-      verseDiv.style.opacity = 0;
-      setTimeout(() => {
-        verseDiv.innerText = `"${text}"`;
-        document.getElementById('reference').innerText = reference;
-        verseDiv.style.opacity = 1;
-      }, 300);
+      // Actualización directa sin animaciones complejas
+      const v = document.getElementById('verse');
+      const r = document.getElementById('reference');
+      if(v) v.innerText = `"${text}"`;
+      if(r) r.innerText = reference;
     }
 
     function sendNotification(text, title) {
@@ -135,7 +129,7 @@
           registration.showNotification(title, { 
             body: text, 
             icon: 'https://cdn-icons-png.flaticon.com/512/2665/2665038.png', 
-            tag: 'daily-verse', 
+            tag: 'daily-verse', // Mantiene solo una notificación fija
             requireInteraction: true,
             silent: false
           });
@@ -146,10 +140,13 @@
     // Iniciar
     loadVerse();
     
+    // Ocultar botón si ya tiene permiso
     if (Notification.permission === 'granted') {
-      document.getElementById('btn-notify').style.display = 'none';
+      const btn = document.getElementById('btn-notify');
+      if(btn) btn.style.display = 'none';
     }
     
+    // Revisar cada minuto
     setInterval(() => loadVerse(), 60000); 
   </script>
 </body>
