@@ -22,7 +22,7 @@ self.addEventListener('notificationclick', function(event) {
       }
       // Si no, abre una nueva
       if (clients.openWindow) {
-        return clients.openWindow('/');
+        return clients.openWindow('./');
       }
     })
   );
