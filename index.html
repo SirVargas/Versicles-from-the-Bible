@@ -8,50 +8,22 @@
   <style>
     body { background: #121212; color: #e0e0e0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; overflow: hidden; }
     #verse-container { padding: 30px; max-width: 600px; width: 90%; }
-    
-    #verse { 
-      font-size: 1.6rem; 
-      font-style: italic; 
-      margin-bottom: 25px; 
-      line-height: 1.5; 
-      text-shadow: 0px 2px 4px rgba(0,0,0,0.5);
-    }
-    
-    #reference { 
-      font-weight: bold; 
-      margin-top: 15px; 
-      color: #bb86fc; 
-      font-size: 1.2rem; 
-      letter-spacing: 1px; 
-      text-transform: uppercase;
-    }
-    
-    #btn-notify { 
-      margin-top: 40px; 
-      padding: 15px 30px; 
-      background: #03dac6; 
-      border: none; 
-      cursor: pointer; 
-      border-radius: 50px; 
-      color: #000; 
-      font-weight: 800; 
-      font-size: 0.9rem; 
-      box-shadow: 0 4px 15px rgba(3, 218, 198, 0.4);
-    }
+    #verse { font-size: 1.6rem; font-style: italic; margin-bottom: 25px; line-height: 1.5; text-shadow: 0px 2px 4px rgba(0,0,0,0.5); }
+    #reference { font-weight: bold; margin-top: 15px; color: #bb86fc; font-size: 1.2rem; letter-spacing: 1px; text-transform: uppercase; }
+    #btn-notify { margin-top: 40px; padding: 15px 30px; background: #03dac6; border: none; cursor: pointer; border-radius: 50px; color: #000; font-weight: 800; font-size: 0.9rem; box-shadow: 0 4px 15px rgba(3, 218, 198, 0.4); }
   </style>
 </head>
 <body>
   <div id="verse-container">
-    <div id="verse">Cargando inspiración...</div>
+    <div id="verse">Iniciando...</div>
     <div id="reference"></div>
-    <button id="btn-notify" onclick="enableNotifications()">🔔 ACTIVAR NOTIFICACIÓN DIARIA</button>
+    <button id="btn-notify" onclick="enableNotifications()">🔔 ACTIVAR WIDGET</button>
   </div>
 
   <script src="verses.js"></script>
 
   <script>
-    // --- CONFIGURACIÓN ---
-    const UPDATE_MINUTES = 60; // Frecuencia de actualización
+    const UPDATE_MINUTES = 60; 
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js');
@@ -62,61 +34,58 @@
         if (permission === 'granted') {
           document.getElementById('btn-notify').style.display = 'none';
           loadVerse(true); 
-          alert("Activado. Bloquea tu celular para ver el versículo.");
+          alert("Activado.");
         }
       });
     }
 
-    // LÓGICA PRINCIPAL (Blindada contra errores)
+    // --- TRUCO: Función para convertir texto a NEGRITA UNICODE ---
+    function toBold(text) {
+      const normal = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      const bold   = '𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗';
+      let res = '';
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const index = normal.indexOf(char);
+        res += (index !== -1) ? bold[index] : char;
+      }
+      return res;
+    }
+
     function loadVerse(forceUpdate = false) {
-      
-      // 0. Base de datos de respaldo por si falla verses.js
+      // Base de datos de respaldo
       const defaultDB = [{r:"Juan 3:16", t:"Porque de tal manera amó Dios al mundo..."}];
       const db = (typeof versesDB !== 'undefined' && versesDB.length > 0) ? versesDB : defaultDB;
 
-      // 1. Revisar Caché (Para no cambiar si recargas)
       const savedData = localStorage.getItem('dailyVerseData');
       if (savedData && !forceUpdate) {
           try {
             const parsed = JSON.parse(savedData);
             const diff = (Date.now() - parsed.timestamp) / 1000 / 60; 
-            
-            // Si el dato es válido y reciente, úsalo
             if (diff < UPDATE_MINUTES && parsed.text) {
                 updateUI(parsed.text, parsed.reference);
                 return; 
             }
-          } catch(e) {
-            console.error("Error leyendo caché", e);
-          }
+          } catch(e) {}
       }
 
-      // 2. LÓGICA ANTI-REPETICIÓN
+      // Anti-repetición
       let seenVerses = JSON.parse(localStorage.getItem('seenVerses') || "[]");
       let availableVerses = db.filter(v => !seenVerses.includes(v.r));
-      
-      if (availableVerses.length === 0) {
-          seenVerses = []; // Reiniciar si ya vimos todos
-          availableVerses = db;
-      }
+      if (availableVerses.length === 0) { seenVerses = []; availableVerses = db; }
 
-      // 3. Elegir nuevo
       const randomItem = availableVerses[Math.floor(Math.random() * availableVerses.length)];
       
-      // 4. Guardar
       const dataToSave = { text: randomItem.t, reference: randomItem.r, timestamp: Date.now() };
       localStorage.setItem('dailyVerseData', JSON.stringify(dataToSave));
-      
       seenVerses.push(randomItem.r);
       localStorage.setItem('seenVerses', JSON.stringify(seenVerses));
       
-      // 5. Mostrar y Notificar
       updateUI(randomItem.t, randomItem.r);
       sendNotification(randomItem.t, randomItem.r);
     }
 
     function updateUI(text, reference) {
-      // Actualización directa sin animaciones complejas
       const v = document.getElementById('verse');
       const r = document.getElementById('reference');
       if(v) v.innerText = `"${text}"`;
@@ -125,11 +94,14 @@
 
     function sendNotification(text, title) {
       if (Notification.permission === 'granted') {
+        // AQUÍ APLICAMOS EL TRUCO: Convertimos el título a Negrita
+        const boldTitle = toBold(title); 
+        
         navigator.serviceWorker.ready.then(registration => {
-          registration.showNotification(title, { 
+          registration.showNotification(boldTitle, { 
             body: text, 
             icon: 'https://cdn-icons-png.flaticon.com/512/2665/2665038.png', 
-            tag: 'daily-verse', // Mantiene solo una notificación fija
+            tag: 'daily-verse', 
             requireInteraction: true,
             silent: false
           });
@@ -137,16 +109,13 @@
       }
     }
     
-    // Iniciar
     loadVerse();
     
-    // Ocultar botón si ya tiene permiso
     if (Notification.permission === 'granted') {
       const btn = document.getElementById('btn-notify');
       if(btn) btn.style.display = 'none';
     }
     
-    // Revisar cada minuto
     setInterval(() => loadVerse(), 60000); 
   </script>
 </body>
