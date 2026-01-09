@@ -1,6 +1,6 @@
 {
   "name": "Biblia escritos",
-  "short_name": "Biblia",
+  "short_name": "Biblia versículos",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#121212",
