@@ -10,24 +10,35 @@
     #verse-container { padding: 30px; max-width: 600px; width: 90%; }
     #verse { font-size: 1.6rem; font-style: italic; margin-bottom: 25px; line-height: 1.5; text-shadow: 0px 2px 4px rgba(0,0,0,0.5); }
     #reference { font-weight: bold; margin-top: 15px; color: #bb86fc; font-size: 1.2rem; letter-spacing: 1px; text-transform: uppercase; }
-    #btn-notify { margin-top: 40px; padding: 15px 30px; background: #03dac6; border: none; cursor: pointer; border-radius: 50px; color: #000; font-weight: 800; font-size: 0.9rem; box-shadow: 0 4px 15px rgba(3, 218, 198, 0.4); }
-    .status { margin-top: 20px; font-size: 0.8rem; color: #888; }
+    
+    /* --- ESTILOS DE LOS DOS BOTONES --- */
+    button { margin-top: 30px; padding: 15px 30px; border: none; cursor: pointer; border-radius: 50px; font-weight: 800; font-size: 0.9rem; transition: transform 0.2s; width: 100%; max-width: 300px; }
+    button:active { transform: scale(0.95); }
+    
+    #btn-notify { background: #03dac6; color: #000; box-shadow: 0 4px 15px rgba(3, 218, 198, 0.4); }
+    /* Estilo para el botón rojo que faltaba */
+    #btn-unsubscribe { background: #cf6679; color: #000; box-shadow: 0 4px 15px rgba(207, 102, 121, 0.4); display: none; }
+    
+    .status { margin-top: 20px; font-size: 0.8rem; color: #888; height: 20px; }
   </style>
 </head>
 <body>
   <div id="verse-container">
     <div id="verse">Cargando inspiración...</div>
     <div id="reference"></div>
+    
     <button id="btn-notify" onclick="window.subscribeUser()">🔔 RECIBIR VERSÍCULO DIARIO</button>
+    
+    <button id="btn-unsubscribe" onclick="window.unsubscribeUser()">🔕 DETENER NOTIFICACIONES</button>
+    
     <div id="debug" class="status"></div>
   </div>
 
-    <script type="module">
+  <script type="module">
     import { versesDB } from './js/verses.js';
 
     const PUBLIC_VAPID_KEY = 'BPsQjUu_RJyEgJlc86ZPxwu6SNLaRL5DisfvSMd9DrglSHS9wSoXPLCDWb1WKtqc2RIW86el-bwK5q6zN8AXOIk';
 
-    // Variable global para guardar el versículo actual
     let currentVerseData = null;
 
     function urlBase64ToUint8Array(base64String) {
@@ -44,10 +55,7 @@
     function loadLocalVerse() {
        const today = new Date().getDate(); 
        const randomItem = versesDB[today % versesDB.length]; 
-       
-       // Guardamos el versículo en la variable global para usarlo al suscribir
        currentVerseData = randomItem;
-
        document.getElementById('verse').innerText = `"${randomItem.t}"`;
        document.getElementById('reference').innerText = randomItem.r;
     }
@@ -55,6 +63,8 @@
     function updateUI(isSubscribed) {
         const btnSub = document.getElementById('btn-notify');
         const btnUnsub = document.getElementById('btn-unsubscribe');
+        
+        // Ahora sí existen ambos botones, no dará error
         if (isSubscribed) {
             btnSub.style.display = 'none';
             btnUnsub.style.display = 'inline-block';
@@ -80,10 +90,10 @@
           applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
         });
 
-        // AQUÍ ESTÁ EL TRUCO: Enviamos también el "verse" actual
+        // Enviamos el versículo actual para la bienvenida
         const bodyData = {
             subscription: subscription,
-            firstVerse: currentVerseData // Enviamos el texto que se ve en pantalla
+            firstVerse: currentVerseData
         };
 
         const response = await fetch('/api/subscribe', {
