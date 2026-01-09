@@ -1,6 +1,5 @@
-// --- CONFIGURACIÓN DE VERSIÓN ---
-// El index.html lee esto para el footer. ¡Cámbialo cuando hagas updates!
-const CACHE_NAME = 'biblia-v11-SYNC-FIX'; 
+// CAMBIA ESTO CADA VEZ QUE HAGAS UN UPDATE
+const CACHE_NAME = 'biblia-v12-NETWORK-FIRST'; 
 
 const urlsToCache = [
   './',
@@ -11,7 +10,7 @@ const urlsToCache = [
   './manifest.json'
 ];
 
-// 1. Instalación (Fuerza la espera para actualizar rápido)
+// 1. Instalación
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
@@ -19,29 +18,47 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// 2. Activación (Borra cachés viejos para evitar conflictos)
+// 2. Activación (Limpieza de caché viejo)
 self.addEventListener('activate', (event) => {
   event.waitUntil(caches.keys().then((cacheNames) => Promise.all(
     cacheNames.map((cacheName) => {
       if (cacheName !== CACHE_NAME) return caches.delete(cacheName);
     })
   )));
-  self.clients.claim(); // Toma control inmediato
+  self.clients.claim();
 });
 
-// 3. Intercepción de Red (Estrategia: Caché primero, excepto API)
+// 3. ESTRATEGIA DE RED HÍBRIDA (LO MÁS IMPORTANTE)
 self.addEventListener('fetch', (event) => {
-  // Las APIs NUNCA se cachean, van directo a la red
-  if (event.request.url.includes('/api/')) {
-      return event.respondWith(fetch(event.request));
+  // A. Las APIs nunca se cachean
+  if (event.request.url.includes('/api/')) return;
+
+  // B. Para la Navegación (HTML): INTERNET PRIMERO (Network First)
+  // Esto obliga a bajar siempre la última versión del index.html
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          return caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, networkResponse.clone());
+            return networkResponse;
+          });
+        })
+        .catch(() => {
+          // Si no hay internet, usa el caché
+          return caches.match(event.request);
+        })
+    );
+    return;
   }
-  
+
+  // C. Para Archivos (JS, CSS, Imágenes): CACHÉ PRIMERO (Cache First)
   event.respondWith(
     caches.match(event.request).then((response) => response || fetch(event.request))
   );
 });
 
-// 4. MANEJO DE NOTIFICACIONES (PUSH)
+// 4. Notificaciones Push
 self.addEventListener('push', function(event) {
   let data = { title: 'Biblia', body: 'Nueva bendición disponible', url: './' };
   
@@ -57,13 +74,11 @@ self.addEventListener('push', function(event) {
   const options = {
     body: data.body,
     icon: './img/icon.png',
-    badge: './img/badge.png', // Icono pequeño (silueta blanca)
+    badge: './img/badge.png',
     data: { url: data.url },
     requireInteraction: true,
-    
-    // --- TRUCOS PARA NO ACUMULAR ---
-    tag: 'verse-of-the-day', // Reemplaza cualquier notificación anterior con este ID
-    renotify: true           // Vuelve a sonar/vibrar aunque reemplace la vieja
+    tag: 'verse-of-the-day', // Evita acumulación
+    renotify: true
   };
 
   event.waitUntil(
@@ -71,21 +86,17 @@ self.addEventListener('push', function(event) {
   );
 });
 
-// 5. CLIC EN NOTIFICACIÓN
+// 5. Clic en Notificación
 self.addEventListener('notificationclick', function(event) {
-  event.notification.close(); // Cierra la notificación
-  
+  event.notification.close();
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
-      // Intenta encontrar la ventana de la app ya abierta
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
-        // Si está abierta, enfócala y RECARGA para ver el nuevo versículo
         if (client.url.includes(self.registration.scope)) {
             return client.focus().then(() => client.navigate('./'));
         }
       }
-      // Si no está abierta, abre una nueva
       if (clients.openWindow) return clients.openWindow('./');
     })
   );
