@@ -6,9 +6,7 @@ const options = {};
 let client;
 let clientPromise;
 
-if (!process.env.MONGODB_URI) {
-  throw new Error('Falta MONGODB_URI en las variables de Vercel');
-}
+if (!process.env.MONGODB_URI) throw new Error('Falta MONGODB_URI');
 
 if (process.env.NODE_ENV === 'development') {
   if (!global._mongoClientPromise) {
@@ -22,9 +20,7 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ message: 'Method not allowed' });
-  }
+  if (req.method !== 'POST') return res.status(405).json({ message: 'Method not allowed' });
 
   try {
     const subscription = req.body;
@@ -38,9 +34,8 @@ export default async function handler(req, res) {
       { upsert: true }
     );
 
-    return res.status(201).json({ message: 'Guardado exitosamente.' });
+    return res.status(201).json({ message: 'Suscripción guardada.' });
   } catch (error) {
-    console.error('Error en subscribe:', error);
     return res.status(500).json({ error: 'Error interno.' });
   }
 }
