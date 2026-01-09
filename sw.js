@@ -1,11 +1,11 @@
-const CACHE_NAME = 'biblia-v17-MATCH-FLEXIBLE'; // Subimos versión
+const CACHE_NAME = 'biblia-v18-PWA-RESCUE'; // Subimos versión
 const urlsToCache = [
   '/',                
-  '/index.html',
-  '/js/verses.js',
-  '/img/icon.png',
-  '/img/badge.png',
-  '/manifest.json'
+  './index.html',
+  './js/verses.js',
+  './img/icon.png',
+  './img/badge.png',
+  './manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
