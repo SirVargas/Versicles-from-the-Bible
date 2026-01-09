@@ -1,9 +1,10 @@
-const CACHE_NAME = 'biblia-sync-v1'; // Cambiamos nombre para forzar actualización
+const CACHE_NAME = 'biblia-sync-v2'; // Cambiamos nombre para forzar actualización
 const urlsToCache = [
   './',
   './index.html',
   './js/verses.js',
   './img/icon.png',
+  './img/badge.png',
   './manifest.json'
 ];
 
@@ -45,7 +46,7 @@ self.addEventListener('push', function(event) {
   const options = {
     body: data.body,
     icon: './img/icon.png',
-    badge: './img/icon.png',
+    badge: './img/badge.png',
     data: { url: data.url },
     requireInteraction: true,
     tag: 'verse-of-the-day', // <--- ESTO EVITA LA ACUMULACIÓN
@@ -57,15 +58,27 @@ self.addEventListener('push', function(event) {
   );
 });
 
+// Click en notificación
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
+  
   event.waitUntil(
-    clients.matchAll({type: 'window'}).then( windowClients => {
-      for (var i = 0; i < windowClients.length; i++) {
-        var client = windowClients[i];
-        if (client.url === './' && 'focus' in client) return client.focus();
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+      // 1. Si la App ya está abierta, la enfocamos y recargamos
+      for (let i = 0; i < windowClients.length; i++) {
+        const client = windowClients[i];
+        // Verificamos si es nuestra URL (ignorando query params)
+        if (client.url.includes(self.registration.scope)) {
+            return client.focus().then(() => {
+                // ESTA ES LA CLAVE: Forzar recarga para ver el nuevo versículo
+                return client.navigate('./'); 
+            });
+        }
       }
-      if (clients.openWindow) return clients.openWindow('./');
+      // 2. Si no está abierta, abrimos una nueva
+      if (clients.openWindow) {
+        return clients.openWindow('./');
+      }
     })
   );
 });
