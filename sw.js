@@ -1,6 +1,4 @@
-// CAMBIA ESTO CADA VEZ QUE HAGAS UN UPDATE
-const CACHE_NAME = 'biblia-v12-NETWORK-FIRST'; 
-
+const CACHE_NAME = 'biblia-v13-FAST-LOAD'; // Incrementamos versión
 const urlsToCache = [
   './',
   './index.html',
@@ -10,7 +8,6 @@ const urlsToCache = [
   './manifest.json'
 ];
 
-// 1. Instalación
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
@@ -18,7 +15,6 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// 2. Activación (Limpieza de caché viejo)
 self.addEventListener('activate', (event) => {
   event.waitUntil(caches.keys().then((cacheNames) => Promise.all(
     cacheNames.map((cacheName) => {
@@ -28,48 +24,36 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// 3. ESTRATEGIA DE RED HÍBRIDA (LO MÁS IMPORTANTE)
+// --- ESTRATEGIA: STALE-WHILE-REVALIDATE ---
+// 1. Muestra caché inmediatamente (Velocidad).
+// 2. Va a la red en segundo plano para actualizar caché (Actualización).
 self.addEventListener('fetch', (event) => {
-  // A. Las APIs nunca se cachean
+  // Ignorar API (siempre red)
   if (event.request.url.includes('/api/')) return;
 
-  // B. Para la Navegación (HTML): INTERNET PRIMERO (Network First)
-  // Esto obliga a bajar siempre la última versión del index.html
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request)
-        .then((networkResponse) => {
-          return caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, networkResponse.clone());
-            return networkResponse;
-          });
-        })
-        .catch(() => {
-          // Si no hay internet, usa el caché
-          return caches.match(event.request);
-        })
-    );
-    return;
-  }
-
-  // C. Para Archivos (JS, CSS, Imágenes): CACHÉ PRIMERO (Cache First)
   event.respondWith(
-    caches.match(event.request).then((response) => response || fetch(event.request))
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.match(event.request).then((cachedResponse) => {
+        
+        // Promesa de Red: Busca lo nuevo y actualiza el caché
+        const fetchPromise = fetch(event.request).then((networkResponse) => {
+          cache.put(event.request, networkResponse.clone());
+          return networkResponse;
+        }).catch(() => {
+           // Si falla la red, no pasa nada, ya mostramos el caché
+        });
+
+        // Si hay caché, devuélvelo YA. Si no, espera a la red.
+        return cachedResponse || fetchPromise;
+      });
+    })
   );
 });
 
-// 4. Notificaciones Push
+// Notificaciones (Igual que antes)
 self.addEventListener('push', function(event) {
   let data = { title: 'Biblia', body: 'Nueva bendición disponible', url: './' };
-  
-  if (event.data) {
-    try {
-        const json = event.data.json();
-        data = { ...data, ...json };
-    } catch (e) {
-        data.body = event.data.text();
-    }
-  }
+  try { data = { ...data, ...event.data.json() }; } catch (e) { data.body = event.data.text(); }
 
   const options = {
     body: data.body,
@@ -77,16 +61,14 @@ self.addEventListener('push', function(event) {
     badge: './img/badge.png',
     data: { url: data.url },
     requireInteraction: true,
-    tag: 'verse-of-the-day', // Evita acumulación
+    tag: 'verse-of-the-day',
     renotify: true
   };
 
-  event.waitUntil(
-    self.registration.showNotification(data.title, options)
-  );
+  event.waitUntil(self.registration.showNotification(data.title, options));
 });
 
-// 5. Clic en Notificación
+// Clic en notificación
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   event.waitUntil(
@@ -94,6 +76,7 @@ self.addEventListener('notificationclick', function(event) {
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
         if (client.url.includes(self.registration.scope)) {
+            // Enfoca y navega para forzar actualización visual
             return client.focus().then(() => client.navigate('./'));
         }
       }
