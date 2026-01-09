@@ -25,7 +25,6 @@
   <script type="module">
     import { versesDB } from './js/verses.js';
 
-    // LLAVE PÚBLICA DE VERCEL (Asegúrate que sea la misma que pusiste en variables de entorno)
     const PUBLIC_VAPID_KEY = 'BFOgMvFj_a7M8_y9p5q8R2s4t6u8v0x2z4A6C8E0G2I4K6M8O0Q2S4U6W8Y0a2c4e6g8i0k2m4o6q8s0u2w4';
 
     function urlBase64ToUint8Array(base64String) {
@@ -41,7 +40,6 @@
 
     function loadLocalVerse() {
        const today = new Date().getDate(); 
-       // Usamos la DB importada
        const randomItem = versesDB[today % versesDB.length]; 
        document.getElementById('verse').innerText = `"${randomItem.t}"`;
        document.getElementById('reference').innerText = randomItem.r;
