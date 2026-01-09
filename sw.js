@@ -1,15 +1,14 @@
-const CACHE_NAME = 'biblia-sync-v2'; // Cambiamos nombre para forzar actualización
+const CACHE_NAME = 'biblia-v10-FORCE-UPDATE'; // <--- CAMBIO CRÍTICO
 const urlsToCache = [
   './',
   './index.html',
   './js/verses.js',
   './img/icon.png',
-  './img/badge.png',
   './manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
+  self.skipWaiting(); // <--- OBLIGA A ACTIVARSE DE INMEDIATO
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(urlsToCache))
   );
@@ -18,19 +17,27 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(caches.keys().then((cacheNames) => Promise.all(
     cacheNames.map((cacheName) => {
-      if (cacheName !== CACHE_NAME) return caches.delete(cacheName);
+      if (cacheName !== CACHE_NAME) {
+          console.log("Borrando caché viejo:", cacheName);
+          return caches.delete(cacheName);
+      }
     })
   )));
+  self.clients.claim(); // <--- TOMA CONTROL INMEDIATO DE LA PÁGINA
 });
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.url.includes('/api/')) return;
+  // Las APIs NUNCA se cachean, siempre van a red
+  if (event.request.url.includes('/api/')) {
+      return event.respondWith(fetch(event.request));
+  }
+  
   event.respondWith(
     caches.match(event.request).then((response) => response || fetch(event.request))
   );
 });
 
-// --- PUSH CON ETIQUETA (TAG) ---
+// --- PUSH CON ETIQUETA (TAG) PARA EVITAR ACUMULACIÓN ---
 self.addEventListener('push', function(event) {
   let data = { title: 'Biblia', body: 'Nueva bendición disponible', url: './' };
   
@@ -46,11 +53,11 @@ self.addEventListener('push', function(event) {
   const options = {
     body: data.body,
     icon: './img/icon.png',
-    badge: './img/badge.png',
+    badge: './img/badge.png', // Asegúrate de tener este archivo
     data: { url: data.url },
     requireInteraction: true,
-    tag: 'verse-of-the-day', // <--- ESTO EVITA LA ACUMULACIÓN
-    renotify: true           // <--- Vuelve a sonar/vibrar al actualizarse
+    tag: 'verse-of-the-day', // <--- ESTA ETIQUETA HACE LA MAGIA (Reemplaza la anterior)
+    renotify: true
   };
 
   event.waitUntil(
@@ -58,27 +65,17 @@ self.addEventListener('push', function(event) {
   );
 });
 
-// Click en notificación
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
-  
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
-      // 1. Si la App ya está abierta, la enfocamos y recargamos
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
-        // Verificamos si es nuestra URL (ignorando query params)
         if (client.url.includes(self.registration.scope)) {
-            return client.focus().then(() => {
-                // ESTA ES LA CLAVE: Forzar recarga para ver el nuevo versículo
-                return client.navigate('./'); 
-            });
+            return client.focus().then(() => client.navigate('./')); // Recarga forzosa
         }
       }
-      // 2. Si no está abierta, abrimos una nueva
-      if (clients.openWindow) {
-        return clients.openWindow('./');
-      }
+      if (clients.openWindow) return clients.openWindow('./');
     })
   );
 });
