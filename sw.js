@@ -1,8 +1,8 @@
-const CACHE_NAME = 'biblia-push-v1';
+const CACHE_NAME = 'biblia-push-v3'; // Versión 3 para forzar actualización
 const urlsToCache = [
   './',
   './index.html',
-  './js/verses.js',
+  './js/verses.js',       // Importante cachear esto
   './img/icon.png',
   './manifest.json'
 ];
@@ -23,52 +23,38 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Estrategia Network First para API, Cache First para archivos
-  if (event.request.url.includes('/api/')) {
-    return; // Dejar pasar las llamadas a la API
-  }
+  // Las llamadas a /api/ NO se guardan en caché
+  if (event.request.url.includes('/api/')) return;
+  
   event.respondWith(
     caches.match(event.request).then((response) => response || fetch(event.request))
   );
 });
 
-// --- AQUÍ OCURRE LA MAGIA DEL PUSH ---
+// ESCUCHAR NOTIFICACIÓN PUSH (Desde Vercel)
 self.addEventListener('push', function(event) {
-  let data = {};
+  let data = event.data ? event.data.json() : { title: 'Biblia', body: 'Nuevo mensaje' };
   
-  if (event.data) {
-    data = event.data.json(); // Leemos lo que mandó Vercel
-  } else {
-    data = { title: 'Biblia', body: 'Nuevo versículo disponible' };
-  }
-
   const options = {
     body: data.body,
-    icon: './img/icon.png',  // Icono local
-    badge: './img/icon.png', // Badge local
-    data: { url: data.url || './' }, // Guardamos la URL para abrirla al tocar
+    icon: './img/icon.png',
+    badge: './img/icon.png',
+    data: { url: './' },
     requireInteraction: true
   };
 
-  event.waitUntil(
-    self.registration.showNotification(data.title, options)
-  );
+  event.waitUntil(self.registration.showNotification(data.title, options));
 });
 
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
-  // Al tocar la notificación, abrimos la app
   event.waitUntil(
     clients.matchAll({type: 'window'}).then( windowClients => {
       for (var i = 0; i < windowClients.length; i++) {
         var client = windowClients[i];
-        if (client.url === './' && 'focus' in client) {
-          return client.focus();
-        }
+        if (client.url === './' && 'focus' in client) return client.focus();
       }
-      if (clients.openWindow) {
-        return clients.openWindow('./');
-      }
+      if (clients.openWindow) return clients.openWindow('./');
     })
   );
 });
