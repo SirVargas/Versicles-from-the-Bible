@@ -60,7 +60,7 @@ export default async function handler(req, res) {
       title: title,
       body: body,
       icon: "https://versicles-from-the-bible.vercel.app/img/icon.png",
-      badge: "https://versicles-from-the-bible.vercel.app/img/icon.png",
+      badge: "https://versicles-from-the-bible.vercel.app/img/badge.png",
       url: "./"
     });
 
