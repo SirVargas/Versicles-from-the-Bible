@@ -18,17 +18,16 @@
   <div id="verse-container">
     <div id="verse">Cargando inspiración...</div>
     <div id="reference"></div>
-    <button id="btn-notify" onclick="subscribeUser()">🔔 RECIBIR VERSÍCULO DIARIO</button>
+    <button id="btn-notify" onclick="window.subscribeUser()">🔔 RECIBIR VERSÍCULO DIARIO</button>
     <div id="debug" class="status"></div>
   </div>
 
-  <script src="js/verses.js"></script>
+  <script type="module">
+    import { versesDB } from './js/verses.js';
 
-  <script>
-    // ESTA ES LA CLAVE PÚBLICA QUE GENERAMOS (La misma que pusiste en Vercel)
+    // LLAVE PÚBLICA DE VERCEL (Asegúrate que sea la misma que pusiste en variables de entorno)
     const PUBLIC_VAPID_KEY = 'BFOgMvFj_a7M8_y9p5q8R2s4t6u8v0x2z4A6C8E0G2I4K6M8O0Q2S4U6W8Y0a2c4e6g8i0k2m4o6q8s0u2w4';
 
-    // Función auxiliar para convertir la llave
     function urlBase64ToUint8Array(base64String) {
       const padding = '='.repeat((4 - base64String.length % 4) % 4);
       const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -40,73 +39,55 @@
       return outputArray;
     }
 
-    // 1. Cargar un versículo localmente al abrir la app (para que no se vea vacía)
     function loadLocalVerse() {
-       const db = (typeof versesDB !== 'undefined' && versesDB.length > 0) ? versesDB : [{r:"Juan 3:16", t:"Porque de tal manera amó Dios al mundo..."}];
-       // Usamos la fecha como semilla para que cambie cada día localmente
        const today = new Date().getDate(); 
-       const randomItem = db[today % db.length]; 
-       
+       // Usamos la DB importada
+       const randomItem = versesDB[today % versesDB.length]; 
        document.getElementById('verse').innerText = `"${randomItem.t}"`;
        document.getElementById('reference').innerText = randomItem.r;
     }
 
-    // 2. Registrar Service Worker y Suscribirse
-    async function subscribeUser() {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        alert('Tu celular no soporta notificaciones Push.');
-        return;
-      }
+    // Asignar a window para que el HTML pueda ver la función
+    window.subscribeUser = async function() {
+      if (!('serviceWorker' in navigator)) return;
 
       try {
         const registration = await navigator.serviceWorker.register('sw.js');
-        console.log('SW Registrado');
-
         const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-          alert('Necesitamos permiso para enviarte los versículos.');
-          return;
-        }
+        if (permission !== 'granted') return;
 
-        // Suscribirse al sistema de Google/Vercel
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
         });
 
-        console.log('Suscripción generada:', subscription);
-
-        // Enviar esta suscripción a TU BASE DE DATOS en Vercel
         await fetch('/api/subscribe', {
           method: 'POST',
           body: JSON.stringify(subscription),
-          headers: {
-            'Content-Type': 'application/json'
-          }
+          headers: { 'Content-Type': 'application/json' }
         });
 
         document.getElementById('btn-notify').style.display = 'none';
         document.getElementById('debug').innerText = "✅ Conectado al servidor.";
         alert("¡Listo! Recibirás versículos aunque la app esté cerrada.");
-
       } catch (err) {
-        console.error('Error:', err);
         document.getElementById('debug').innerText = "❌ Error: " + err.message;
       }
     }
 
-    // Iniciar
     loadLocalVerse();
     
-    // Verificar si ya está suscrito para ocultar botón
-    navigator.serviceWorker.ready.then(async (reg) => {
-      const sub = await reg.pushManager.getSubscription();
-      if (sub) {
-        document.getElementById('btn-notify').style.display = 'none';
-        document.getElementById('debug').innerText = "✅ Sistema activo.";
-      }
-    });
-
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then(async (reg) => {
+        try {
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) {
+            document.getElementById('btn-notify').style.display = 'none';
+            document.getElementById('debug').innerText = "✅ Sistema activo.";
+          }
+        } catch(e){}
+      });
+    }
   </script>
 </body>
 </html>
