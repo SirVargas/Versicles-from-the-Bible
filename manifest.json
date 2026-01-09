@@ -1,7 +1,7 @@
 {
   "name": "Biblia Diaria",
   "short_name": "Biblia versículos",
-  "start_url": "/",
+  "start_url": "https://versicles-from-the-bible.vercel.app/",
   "display": "standalone",
   "background_color": "#121212",
   "theme_color": "#bb86fc",
