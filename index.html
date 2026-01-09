@@ -25,6 +25,7 @@
   <script type="module">
     import { versesDB } from './js/verses.js';
 
+    // TU LLAVE PÚBLICA REAL
     const PUBLIC_VAPID_KEY = 'BHXauRGHCUUzzL87g1JrgZVEciH-FwGkrb1iErutievBY4H8tNsYx5be17liVWX5z_lmAezFJvl6EZgeBr64GCo';
 
     function urlBase64ToUint8Array(base64String) {
@@ -45,36 +46,60 @@
        document.getElementById('reference').innerText = randomItem.r;
     }
 
-    // Asignar a window para que el HTML pueda ver la función
+    // ESPERA AL SERVICE WORKER
     window.subscribeUser = async function() {
       if (!('serviceWorker' in navigator)) return;
 
-      try {
-        const registration = await navigator.serviceWorker.register('sw.js');
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') return;
+      const btn = document.getElementById('btn-notify');
+      const debug = document.getElementById('debug');
+      
+      debug.innerText = "⏳ Conectando...";
+      btn.disabled = true;
 
+      try {
+        // 1. Registramos y ESPERAMOS a que esté activo (Solución al error AbortError)
+        await navigator.serviceWorker.register('sw.js');
+        const registration = await navigator.serviceWorker.ready;
+
+        // 2. Pedir permiso
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+            debug.innerText = "❌ Permiso denegado";
+            btn.disabled = false;
+            return;
+        }
+
+        // 3. Suscribirse con la llave nueva
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
         });
 
-        await fetch('/api/subscribe', {
+        // 4. Enviar a Vercel
+        const response = await fetch('/api/subscribe', {
           method: 'POST',
           body: JSON.stringify(subscription),
           headers: { 'Content-Type': 'application/json' }
         });
 
-        document.getElementById('btn-notify').style.display = 'none';
-        document.getElementById('debug').innerText = "✅ Conectado al servidor.";
-        alert("¡Listo! Recibirás versículos aunque la app esté cerrada.");
+        if (response.ok) {
+            btn.style.display = 'none';
+            debug.innerText = "✅ Conectado exitosamente.";
+            alert("¡Listo! Recibirás versículos cada 30 minutos.");
+        } else {
+            throw new Error("Error en el servidor");
+        }
+
       } catch (err) {
-        document.getElementById('debug').innerText = "❌ Error: " + err.message;
+        console.error(err);
+        debug.innerText = "❌ Error: " + err.message;
+        btn.disabled = false;
       }
     }
 
     loadLocalVerse();
     
+    // Verificar si ya está suscrito
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then(async (reg) => {
         try {
