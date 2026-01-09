@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="manifest" href="manifest.json">
-  <title>Versículo para el alma</title>
+  <title>Versículo Diario</title>
   <style>
     body { background: #121212; color: #e0e0e0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; overflow: hidden; }
     #verse-container { padding: 30px; max-width: 600px; width: 90%; }
@@ -36,12 +36,13 @@
 
   <script type="module">
     import { versesDB } from './js/verses.js';
-    
+
+    // TU NUEVA VAPID KEY
     const PUBLIC_VAPID_KEY = 'BLAmSvWiwybGELdtlKxn1XH_ftdsMs2IpWshmmPWGUF3ndWSS06tXY4oFAcUEHbYQPcDaaOl_6cwNjaFM0bmUhI';
     
     let currentVerseData = null;
 
-    // --- Versión del SW ---
+    // --- 1. Leer versión del Service Worker ---
     async function showVersionFromSW() {
         try {
             const response = await fetch('./sw.js?t=' + new Date().getTime());
@@ -54,12 +55,14 @@
         } catch (e) { document.getElementById('version-footer').innerText = "v?.?"; }
     }
 
+    // --- 2. Renderizar Versículo ---
     function renderVerse(data) {
         currentVerseData = data;
         document.getElementById('verse').innerText = `"${data.t}"`;
         document.getElementById('reference').innerText = data.r;
     }
 
+    // --- 3. Carga Inteligente (API -> Local) ---
     async function loadSmartVerse() {
        try {
            const response = await fetch('/api/current-verse?t=' + new Date().getTime());
@@ -75,10 +78,12 @@
        renderVerse(randomItem);
     }
 
+    // Actualizar si vuelve a ser visible
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") loadSmartVerse();
     });
 
+    // --- 4. Utilidades VAPID ---
     function urlBase64ToUint8Array(base64String) {
       const padding = '='.repeat((4 - base64String.length % 4) % 4);
       const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -101,21 +106,21 @@
             btnUnsub.style.display = 'none';
         }
     }
-    
+
+    // --- 5. Funciones de Suscripción ---
     window.subscribeUser = async function() {
       if (!('serviceWorker' in navigator)) return;
 
       try {
         const registration = await navigator.serviceWorker.ready;
         const permission = await Notification.requestPermission();
-        if (permission !== 'granted') return; // Si niega, no hacemos nada
+        if (permission !== 'granted') return;
 
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
         });
 
-        // Backend
         const response = await fetch('/api/subscribe', {
           method: 'POST',
           body: JSON.stringify({ subscription, firstVerse: currentVerseData }),
@@ -123,17 +128,13 @@
         });
 
         if (response.ok) {
-            // MARCA DE ÉXITO: Ya se configuró en la App
-            localStorage.setItem('app_setup_completed', 'true');
+            // Marca PWA como configurada
+            localStorage.setItem('setup_v1_pwa', 'true');
             updateUI(true);
             console.log("✅ Suscripción exitosa.");
-        } else {
-            console.error("❌ Error en servidor");
-        }
+        } 
 
-      } catch (err) {
-        console.error("❌ Error técnico:", err);
-      }
+      } catch (err) { console.error("Error:", err); }
     }
 
     window.unsubscribeUser = async function() {
@@ -148,14 +149,14 @@
                 headers: { 'Content-Type': 'application/json' }
             });
             await subscription.unsubscribe();
-            // Si se desuscribe manualmente, borramos la marca para que pueda volver a suscribirse
-            localStorage.removeItem('app_setup_completed');
+            // Borramos la marca para permitir re-suscripción
+            localStorage.removeItem('setup_v1_pwa');
         }
         updateUI(false);
       } catch (err) { console.error(err); }
     }
 
-    // --- INICIALIZACIÓN ---
+    // --- 6. Inicialización ---
     showVersionFromSW();
     loadSmartVerse();
     
@@ -163,25 +164,20 @@
       navigator.serviceWorker.register('sw.js');
       navigator.serviceWorker.ready.then(async (reg) => {
         try {
-          // 1. Verificamos si hay suscripción técnica
           const sub = await reg.pushManager.getSubscription();
           
-          // 2. LÓGICA DE FUERZA PARA APP INSTALADA
-          // ¿Es modo App? (Standalone)
+          // --- LÓGICA DE DETECCIÓN DE APP ---
           const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-          // ¿Ya hicimos el setup en la App?
-          const isSetupDone = localStorage.getItem('app_setup_completed');
+          // Buscamos la variable nueva
+          const isSetupDone = localStorage.getItem('setup_v1_pwa');
 
           if (isStandalone && !isSetupDone) {
-              // Si es la App y NO hemos hecho el setup, FORZAMOS botón de suscribir
-              // aunque técnicamente 'sub' exista. Esto obliga al usuario a dar clic.
-              console.log("🆕 Primera vez en App: Forzando botón de suscripción.");
+              // Si es la App y no tiene la marca nueva, mostramos el botón
+              console.log("🆕 App instalada detectada: Forzando setup.");
               updateUI(false); 
           } else {
-              // Comportamiento normal (Web o App ya configurada)
               updateUI(!!sub);
           }
-          
         } catch(e){}
       });
     }
