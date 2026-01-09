@@ -4,20 +4,20 @@ import webPush from 'web-push';
 const uri = process.env.MONGODB_URI;
 const options = {};
 
-// 1. Configuración VAPID
+// Configuración VAPID
 try {
     const publicKey = process.env.VAPID_PUBLIC_KEY;
     const privateKey = process.env.VAPID_PRIVATE_KEY;
 
     if (!publicKey || !privateKey) {
-        console.error("❌ [API] Error: Faltan las llaves VAPID en Vercel.");
+        console.error("❌ [API] Error Crítico: Faltan las llaves VAPID en Vercel.");
     } else {
         webPush.setVapidDetails(
           'mailto:admin@bibliapp.com', 
           publicKey,
           privateKey
         );
-        console.log("✅ [API] VAPID configurado correctamente.");
+        console.log("✅ [API] VAPID configurado.");
     }
 } catch (configError) {
     console.error("❌ [API] Error configurando VAPID:", configError);
@@ -45,12 +45,6 @@ export default async function handler(req, res) {
   try {
     const { subscription, firstVerse } = req.body;
     
-    // Log de seguridad
-    console.log("📥 [API] Datos recibidos:", JSON.stringify({
-        endpoint: subscription?.endpoint ? 'OK' : 'FALTA',
-        hasVerse: !!firstVerse
-    }));
-
     if (!subscription || !subscription.endpoint) {
         return res.status(400).json({ error: 'Falta suscripción válida' });
     }
@@ -59,13 +53,14 @@ export default async function handler(req, res) {
     const db = client.db('biblia_app'); 
     const collection = db.collection('subscriptions');
 
+    // Guardar en DB
     await collection.updateOne(
       { endpoint: subscription.endpoint },
       { $set: subscription },
       { upsert: true }
     );
 
-    // Bienvenida
+    // Preparar mensaje
     const title = firstVerse ? `¡Bienvenido! Tu palabra de hoy:` : '¡Suscripción Activa!';
     const body = firstVerse ? `${firstVerse.t} (${firstVerse.r})` : 'Recibirás versículos de bendición automáticamente. 🙏';
 
@@ -77,19 +72,34 @@ export default async function handler(req, res) {
       url: "./"
     });
 
-    // Enviar Push
+    // --- BLOQUE DE ENVÍO CON DEBUG FORENSE ---
     let pushResult = { success: false, detail: 'No intentado' };
     
     try {
+        console.log("🚀 [API] Intentando enviar Push...");
         await webPush.sendNotification(subscription, payload);
         console.log("✅ [API] Push enviado correctamente.");
-        pushResult = { success: true, detail: 'Enviado' };
+        pushResult = { success: true, detail: 'Enviado OK' };
     } catch (e) {
-        console.error("❌ [API] Falló el envío Push:", e);
-        pushResult = { success: false, detail: e.message, statusCode: e.statusCode };
+        console.error("❌ [API] ERROR WEB-PUSH DETECTADO:");
+        console.error(`👉 StatusCode: ${e.statusCode}`);
+        console.error(`👉 Body: ${e.body}`);
+        console.error(`👉 Headers: ${JSON.stringify(e.headers)}`);
+        
+        // Devolvemos estos detalles al Frontend (Eruda)
+        pushResult = { 
+            success: false, 
+            statusCode: e.statusCode, // 401, 400, 410, etc.
+            body: e.body,             // Mensaje de Google
+            message: e.message 
+        };
     }
+    // ----------------------------------------
 
-    return res.status(201).json({ message: 'Guardado.', pushStatus: pushResult });
+    return res.status(201).json({ 
+        message: 'Guardado.', 
+        pushStatus: pushResult 
+    });
 
   } catch (error) {
     console.error("❌ [API] Error interno:", error);
