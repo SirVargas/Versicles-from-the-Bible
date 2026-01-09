@@ -15,6 +15,19 @@
     button:active { transform: scale(0.95); }
     #btn-notify { background: #03dac6; color: #000; box-shadow: 0 4px 15px rgba(3, 218, 198, 0.4); }
     #btn-unsubscribe { background: #cf6679; color: #000; box-shadow: 0 4px 15px rgba(207, 102, 121, 0.4); display: none; }
+    
+    /* Footer de Versión Dinámica */
+    .version-footer {
+        position: fixed;
+        bottom: 15px;
+        width: 100%;
+        text-align: center;
+        font-size: 0.75rem;
+        color: #555;
+        font-family: monospace;
+        pointer-events: none;
+        opacity: 0.7;
+    }
   </style>
 </head>
 <body>
@@ -26,41 +39,60 @@
     <button id="btn-unsubscribe" onclick="window.unsubscribeUser()">🔕 DETENER NOTIFICACIONES</button>
   </div>
 
+  <div id="version-footer" class="version-footer">Cargando versión...</div>
+
   <script type="module">
     import { versesDB } from './js/verses.js';
 
-    // Llave Pública (Producción)
     const PUBLIC_VAPID_KEY = 'BLAmSvWiwybGELdtlKxn1XH_ftdsMs2IpWshmMPWGUF3ndWSS06tXY4oFAcUHEbYQPcDaaOl_6cwNjaFM0bmUhI';
-
     let currentVerseData = null;
 
-    // Función auxiliar para dibujar en pantalla
+    // --- 1. Obtener Versión del SW ---
+    async function showVersionFromSW() {
+        try {
+            const response = await fetch('./sw.js?t=' + new Date().getTime());
+            const text = await response.text();
+            const match = text.match(/const\s+CACHE_NAME\s*=\s*['"]([^'"]+)['"]/);
+
+            if (match && match[1]) {
+                const version = match[1].replace('biblia-', '');
+                const footer = document.getElementById('version-footer');
+                footer.innerText = `App: ${version}`;
+                if(version.includes('FORCE')) footer.style.color = '#ff6b6b';
+            }
+        } catch (e) {
+            document.getElementById('version-footer').innerText = "v?.?";
+        }
+    }
+
     function renderVerse(data) {
         currentVerseData = data;
         document.getElementById('verse').innerText = `"${data.t}"`;
         document.getElementById('reference').innerText = data.r;
     }
 
-    // --- NUEVA LÓGICA DE CARGA HÍBRIDA ---
+    // --- 2. Carga Inteligente (API -> Local) ---
     async function loadSmartVerse() {
        try {
-           // 1. Intentamos obtener el versículo sincronizado del servidor
-           const response = await fetch('/api/current-verse');
+           const response = await fetch('/api/current-verse?t=' + new Date().getTime());
            if (response.ok) {
                const serverData = await response.json();
-               console.log("📡 Versículo sincronizado cargado.");
                renderVerse(serverData);
                return;
            }
        } catch (e) {
-           console.log("📴 Offline o Error API, usando local.");
+           console.log("Offline o API Error, usando local.");
        }
-
-       // 2. Si falla (Offline), usamos la lógica local por fecha
+       // Fallback local
        const today = new Date().getDate(); 
        const randomItem = versesDB[today % versesDB.length]; 
        renderVerse(randomItem);
     }
+
+    // --- 3. Sensor de Visibilidad ---
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") loadSmartVerse();
+    });
 
     function urlBase64ToUint8Array(base64String) {
       const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -85,11 +117,13 @@
         }
     }
 
+    // --- Funciones Globales ---
     window.subscribeUser = async function() {
-      if (!('serviceWorker' in navigator)) return console.error("❌ SW no soportado");
+      if (!('serviceWorker' in navigator)) return;
 
       try {
         const registration = await navigator.serviceWorker.register('sw.js');
+        await registration.update(); // Forzar check de actualización
         await navigator.serviceWorker.ready;
         
         const permission = await Notification.requestPermission();
@@ -110,11 +144,6 @@
 
       } catch (err) {
         console.error("Error suscribiendo:", err);
-        if (err.name === 'InvalidAccessError') {
-             navigator.serviceWorker.getRegistration().then(reg => {
-                 if(reg) reg.unregister().then(() => window.location.reload());
-             });
-        }
       }
     }
 
@@ -135,18 +164,13 @@
         updateUI(false);
       } catch (err) { console.error(err); }
     }
-    // SENSOR DE VISIBILIDAD: Recarga el versículo cada vez que abres la app
-    document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") {
-            console.log("👁️ App visible: Buscando actualizaciones...");
-            loadSmartVerse(); // Vuelve a pedir el versículo nuevo
-        }
-    });
 
-    // Iniciar carga inteligente
+    // --- Inicialización ---
+    showVersionFromSW();
     loadSmartVerse();
     
     if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').then(reg => reg.update());
       navigator.serviceWorker.ready.then(async (reg) => {
         try {
           const sub = await reg.pushManager.getSubscription();
