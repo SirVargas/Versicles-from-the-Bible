@@ -30,17 +30,27 @@ export default async function handler(req, res) {
   try {
     const client = await clientPromise;
     const db = client.db('biblia_app');
-    const collection = db.collection('subscriptions');
+    const collectionSub = db.collection('subscriptions');
+    const collectionState = db.collection('app_state'); // Nueva colección para el estado
     
-    const subscriptions = await collection.find({}).toArray();
+    // 1. Elegir versículo aleatorio
+    const randomItem = versesDB[Math.floor(Math.random() * versesDB.length)];
+
+    // 2. GUARDAR en DB para sincronizar con la web
+    // Usamos 'upsert' para sobrescribir siempre el mismo registro
+    await collectionState.updateOne(
+        { id: 'latest_verse' },
+        { $set: { id: 'latest_verse', data: randomItem, date: new Date() } },
+        { upsert: true }
+    );
+    
+    const subscriptions = await collectionSub.find({}).toArray();
     
     if (subscriptions.length === 0) {
-        console.log("ℹ️ [Cron] No hay suscriptores activos.");
-        return res.status(200).json({ message: 'Sin suscriptores.' });
+        console.log("ℹ️ [Cron] Versículo actualizado, pero no hay suscriptores.");
+        return res.status(200).json({ message: 'Sin suscriptores, DB actualizada.' });
     }
 
-    const randomItem = versesDB[Math.floor(Math.random() * versesDB.length)];
-    
     const payload = JSON.stringify({
       title: `📖 ${randomItem.r}`,
       body: randomItem.t,
@@ -49,26 +59,22 @@ export default async function handler(req, res) {
       url: "./"
     });
 
-    console.log(`🚀 [Cron] Iniciando envío a ${subscriptions.length} usuarios...`);
+    console.log(`🚀 [Cron] Enviando "${randomItem.r}" a ${subscriptions.length} usuarios...`);
 
     const promises = subscriptions.map(sub => {
       const { _id, ...pushSubscription } = sub;
-      
       return webPush.sendNotification(pushSubscription, payload)
         .catch(err => {
-          // Log solo si eliminamos un usuario (importante saberlo)
           if (err.statusCode === 410 || err.statusCode === 404) {
-            console.log(`🗑️ [Cron] Usuario inactivo eliminado: ${sub.endpoint.slice(0, 20)}...`);
-            return collection.deleteOne({ endpoint: sub.endpoint });
+            return collectionSub.deleteOne({ endpoint: sub.endpoint });
           }
-          console.error(`❌ [Cron] Error enviando a un usuario: ${err.statusCode}`);
         });
     });
 
     await Promise.all(promises);
     
     console.log("✅ [Cron] Proceso finalizado.");
-    return res.status(200).json({ success: true, count: subscriptions.length });
+    return res.status(200).json({ success: true, verse: randomItem.r });
 
   } catch (error) {
     console.error("❌ [Cron] Error Fatal:", error);
