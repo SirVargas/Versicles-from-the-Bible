@@ -1,12 +1,12 @@
 import { MongoClient } from 'mongodb';
-import webPush from 'web-push'; // Importamos esto para enviar el mensaje
+import webPush from 'web-push';
 
 const uri = process.env.MONGODB_URI;
 const options = {};
 
-// Configurar llaves también aquí para el mensaje de bienvenida
+// Configuración VAPID (El mailto es solo para identificación técnica ante Google)
 webPush.setVapidDetails(
-  'mailto:tu-email@ejemplo.com',
+  'mailto:admin@bibliapp.com', 
   process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
   process.env.VAPID_PRIVATE_KEY
 );
@@ -36,30 +36,30 @@ export default async function handler(req, res) {
     const db = client.db('biblia_app'); 
     const collection = db.collection('subscriptions');
 
-    // 1. Guardar suscripción
+    // 1. Guardar o Actualizar suscripción
     await collection.updateOne(
       { endpoint: subscription.endpoint },
       { $set: subscription },
       { upsert: true }
     );
 
-    // 2. ENVIAR NOTIFICACIÓN DE BIENVENIDA (INMEDIATA)
+    // 2. Enviar Bienvenida Inmediata
     const payload = JSON.stringify({
-      title: '¡Bienvenido!',
-      body: 'Has activado los versículos diarios correctamente. Dios te bendiga.',
+      title: '¡Suscripción Activa!',
+      body: 'Recibirás versículos de bendición automáticamente. 🙏',
       icon: "https://sirvargas.github.io/Versicles-from-the-Bible/img/icon.png",
       badge: "https://sirvargas.github.io/Versicles-from-the-Bible/img/icon.png",
       url: "./"
     });
 
+    // Intentamos enviar la bienvenida, pero no bloqueamos si falla
     try {
         await webPush.sendNotification(subscription, payload);
-    } catch (pushError) {
-        console.error("Error enviando bienvenida:", pushError);
-        // No fallamos la petición si esto falla, pero lo registramos
+    } catch (e) {
+        console.log("Error enviando bienvenida (posiblemente ya estaba suscrito):", e);
     }
 
-    return res.status(201).json({ message: 'Guardado y notificado.' });
+    return res.status(201).json({ message: 'Guardado correctamente.' });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Error interno.' });
