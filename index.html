@@ -37,10 +37,11 @@
   <script type="module">
     import { versesDB } from './js/verses.js';
 
+    // CONFIRMA QUE ESTA ES LA MISMA QUE EN VERCEL
     const PUBLIC_VAPID_KEY = 'BLAmSvWiwybGELdtlKxn1XH_ftdsMs2IpWshmMPWGUF3ndWSS06tXY4oFAcUHEbYQPcDaaOl_6cwNjaFM0bmUhI';
+    
     let currentVerseData = null;
 
-    // --- Mostrar Versión ---
     async function showVersionFromSW() {
         try {
             const response = await fetch('./sw.js?t=' + new Date().getTime());
@@ -53,17 +54,14 @@
         } catch (e) { document.getElementById('version-footer').innerText = "v?.?"; }
     }
 
-    // --- Renderizado ---
     function renderVerse(data) {
         currentVerseData = data;
         document.getElementById('verse').innerText = `"${data.t}"`;
         document.getElementById('reference').innerText = data.r;
     }
 
-    // --- Carga Inteligente (Siempre busca lo nuevo) ---
     async function loadSmartVerse() {
        try {
-           // ?t=Timestamp evita que el navegador guarde en caché la respuesta de la API
            const response = await fetch('/api/current-verse?t=' + new Date().getTime());
            if (response.ok) {
                const serverData = await response.json();
@@ -77,7 +75,6 @@
        renderVerse(randomItem);
     }
 
-    // --- Eventos ---
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") loadSmartVerse();
     });
@@ -105,23 +102,39 @@
         }
     }
 
-    // --- Suscripción ---
+    // --- SUSCRIPCIÓN CON DEBUG ---
     window.subscribeUser = async function() {
-      if (!('serviceWorker' in navigator)) return;
+      if (!('serviceWorker' in navigator)) return alert("Tu celular no soporta Service Workers.");
+
       try {
         const registration = await navigator.serviceWorker.ready;
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') return alert("Debes dar permiso de notificaciones.");
+
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
         });
 
-        await fetch('/api/subscribe', {
+        // Enviamos al backend
+        const response = await fetch('/api/subscribe', {
           method: 'POST',
           body: JSON.stringify({ subscription, firstVerse: currentVerseData }),
           headers: { 'Content-Type': 'application/json' }
         });
-        updateUI(true);
-      } catch (err) { console.error(err); }
+
+        if (response.ok) {
+            updateUI(true);
+            alert("✅ ¡Conectado! Espera la notificación de bienvenida.");
+        } else {
+            const err = await response.json();
+            alert("❌ Error Servidor: " + JSON.stringify(err));
+        }
+
+      } catch (err) {
+        console.error(err);
+        alert("❌ Error App: " + err.message);
+      }
     }
 
     window.unsubscribeUser = async function() {
@@ -136,16 +149,15 @@
                 headers: { 'Content-Type': 'application/json' }
             });
             await subscription.unsubscribe();
+            alert("🔕 Notificaciones desactivadas.");
         }
         updateUI(false);
-      } catch (err) { console.error(err); }
+      } catch (err) { alert("Error: " + err.message); }
     }
 
-    // --- Inicialización ---
     showVersionFromSW();
     loadSmartVerse();
     
-    // Registro ESTÁNDAR (Estable)
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js');
       navigator.serviceWorker.ready.then(async (reg) => {
