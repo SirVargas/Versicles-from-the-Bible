@@ -1,4 +1,4 @@
-const CACHE_NAME = 'biblia-push-v7-debug'; // Versión 7 para forzar recarga
+const CACHE_NAME = 'biblia-sync-v1'; // Cambiamos nombre para forzar actualización
 const urlsToCache = [
   './',
   './index.html',
@@ -7,18 +7,14 @@ const urlsToCache = [
   './manifest.json'
 ];
 
-// Instalación
 self.addEventListener('install', (event) => {
-  console.log("👷 [SW] Instalando nueva versión...");
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(urlsToCache))
   );
 });
 
-// Activación y Limpieza
 self.addEventListener('activate', (event) => {
-  console.log("👷 [SW] Activado y listo.");
   event.waitUntil(caches.keys().then((cacheNames) => Promise.all(
     cacheNames.map((cacheName) => {
       if (cacheName !== CACHE_NAME) return caches.delete(cacheName);
@@ -26,7 +22,6 @@ self.addEventListener('activate', (event) => {
   )));
 });
 
-// Intercepción de red
 self.addEventListener('fetch', (event) => {
   if (event.request.url.includes('/api/')) return;
   event.respondWith(
@@ -34,18 +29,15 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// --- EVENTO PUSH (LO IMPORTANTE) ---
+// --- PUSH CON ETIQUETA (TAG) ---
 self.addEventListener('push', function(event) {
-  console.log("🔔 [SW] ¡Evento Push detectado!");
-
-  let data = { title: 'Biblia', body: 'Nueva bendición disponible' };
+  let data = { title: 'Biblia', body: 'Nueva bendición disponible', url: './' };
   
   if (event.data) {
     try {
-        data = event.data.json();
-        console.log("📦 [SW] Datos recibidos:", data);
+        const json = event.data.json();
+        data = { ...data, ...json };
     } catch (e) {
-        console.warn("⚠️ [SW] No es JSON, usando texto plano.");
         data.body = event.data.text();
     }
   }
@@ -54,20 +46,18 @@ self.addEventListener('push', function(event) {
     body: data.body,
     icon: './img/icon.png',
     badge: './img/icon.png',
-    data: { url: './' }, // Para abrir la app al tocar
-    requireInteraction: true // Mantiene la notificación visible
+    data: { url: data.url },
+    requireInteraction: true,
+    tag: 'verse-of-the-day', // <--- ESTO EVITA LA ACUMULACIÓN
+    renotify: true           // <--- Vuelve a sonar/vibrar al actualizarse
   };
 
   event.waitUntil(
     self.registration.showNotification(data.title, options)
-    .then(() => console.log("✅ [SW] Notificación mostrada en pantalla."))
-    .catch(err => console.error("❌ [SW] Error al mostrar notificación:", err))
   );
 });
 
-// Click en notificación
 self.addEventListener('notificationclick', function(event) {
-  console.log("👆 [SW] Click en notificación.");
   event.notification.close();
   event.waitUntil(
     clients.matchAll({type: 'window'}).then( windowClients => {
