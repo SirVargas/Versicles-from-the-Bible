@@ -1,4 +1,4 @@
-const CACHE_NAME = 'biblia-v18-PWA-RESCUE'; // Subimos versión
+const CACHE_NAME = 'biblia-v19-PWA-RESCUE'; // Subimos versión
 const urlsToCache = [
   '/',                
   './index.html',
