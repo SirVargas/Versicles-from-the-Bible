@@ -1,10 +1,11 @@
 import webPush from 'web-push';
 import { MongoClient } from 'mongodb';
-// IMPORTACIÓN DE LA LISTA COMPARTIDA
-import { versesDB as verses } from '../js/verses.js';
+// Importamos la base de datos de versículos
+import { versesDB } from '../js/verses.js';
 
+// Configuración VAPID
 webPush.setVapidDetails(
-  'mailto:tu-email@ejemplo.com', 
+  'mailto:admin@bibliapp.com', 
   process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
   process.env.VAPID_PRIVATE_KEY
 );
@@ -33,40 +34,54 @@ export default async function handler(req, res) {
     const db = client.db('biblia_app');
     const collection = db.collection('subscriptions');
     
-    // 1. Obtener usuarios
+    // 1. Obtener TODOS los usuarios suscritos
     const subscriptions = await collection.find({}).toArray();
     
     if (subscriptions.length === 0) {
-        return res.status(200).json({ message: 'Sin suscriptores.' });
+        return res.status(200).json({ message: 'No hay suscriptores a quien enviar.' });
     }
 
-    // 2. Elegir versículo de la lista importada
-    const randomItem = verses[Math.floor(Math.random() * verses.length)];
+    // 2. Elegir UN versículo aleatorio de la lista
+    const randomItem = versesDB[Math.floor(Math.random() * versesDB.length)];
     
+    // 3. Preparar el mensaje
     const payload = JSON.stringify({
       title: `📖 ${randomItem.r}`,
       body: randomItem.t,
-      // Icono absoluto para notificaciones Push
       icon: "https://sirvargas.github.io/Versicles-from-the-Bible/img/icon.png",
       badge: "https://sirvargas.github.io/Versicles-from-the-Bible/img/icon.png",
       url: "./"
     });
 
-    // 3. Enviar masivamente
+    console.log(`Enviando: ${randomItem.r} a ${subscriptions.length} usuarios.`);
+
+    // 4. Enviar a TODOS (Masivo)
     const promises = subscriptions.map(sub => {
+      // Quitamos el _id de Mongo porque web-push no lo entiende
       const { _id, ...pushSubscription } = sub;
+      
       return webPush.sendNotification(pushSubscription, payload)
         .catch(err => {
+          // Si el usuario ya no existe (410) o bloqueó (404), lo borramos de la DB
           if (err.statusCode === 410 || err.statusCode === 404) {
+            console.log(`Usuario inactivo eliminado: ${sub.endpoint}`);
             return collection.deleteOne({ endpoint: sub.endpoint });
           }
+          console.error("Error enviando a un usuario:", err);
         });
     });
 
+    // Esperar a que se envíen todos
     await Promise.all(promises);
-    return res.status(200).json({ success: true, verse: randomItem.r });
+    
+    return res.status(200).json({ 
+        success: true, 
+        verse: randomItem.r, 
+        count: subscriptions.length 
+    });
 
   } catch (error) {
+    console.error("Error general:", error);
     return res.status(500).json({ error: error.message });
   }
 }
