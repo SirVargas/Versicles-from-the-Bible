@@ -1,0 +1,12 @@
+{
+  "name": "biblia-pwa-push",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'No build step needed'"
+  },
+  "dependencies": {
+    "mongodb": "^6.3.0",
+    "web-push": "^3.6.0"
+  }
+}
