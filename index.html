@@ -135,6 +135,13 @@
         updateUI(false);
       } catch (err) { console.error(err); }
     }
+    // SENSOR DE VISIBILIDAD: Recarga el versículo cada vez que abres la app
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            console.log("👁️ App visible: Buscando actualizaciones...");
+            loadSmartVerse(); // Vuelve a pedir el versículo nuevo
+        }
+    });
 
     // Iniciar carga inteligente
     loadSmartVerse();
