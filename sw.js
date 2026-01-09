@@ -1,6 +1,6 @@
-const CACHE_NAME = 'biblia-v16-URL-FIX'; // Versión nueva
+const CACHE_NAME = 'biblia-v17-MATCH-FLEXIBLE'; // Subimos versión
 const urlsToCache = [
-  '/', 
+  '/',                
   '/index.html',
   '/js/verses.js',
   '/img/icon.png',
@@ -49,7 +49,7 @@ self.addEventListener('push', function(event) {
     body: data.body,
     icon: '/img/icon.png',
     badge: '/img/badge.png',
-    data: { url: data.url }, // Mantenemos data.url
+    data: { url: data.url },
     requireInteraction: true,
     tag: 'verse-of-the-day',
     renotify: true
@@ -58,24 +58,29 @@ self.addEventListener('push', function(event) {
   event.waitUntil(self.registration.showNotification(data.title, options));
 });
 
-// --- CLIC CON URL EXACTA ---
+// --- CLIC INTELIGENTE (Solución Pestañas Duplicadas) ---
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   
-  // USAMOS TU URL EXACTA AQUÍ
-  const targetUrl = 'https://versicles-from-the-bible.vercel.app/';
+  // URL destino (La raíz de tu sitio)
+  const urlToOpen = new URL('/', self.location.origin).href;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
-      // 1. Si la App ya está abierta, la enfocamos
-      for (let i = 0; i < windowClients.length; i++) {
-        const client = windowClients[i];
-        if (client.url === targetUrl || client.url.startsWith(targetUrl)) {
-            return client.focus().then(() => client.navigate(targetUrl));
-        }
+      // Buscamos cualquier cliente que pertenezca a nuestro dominio/scope
+      const matchingClient = windowClients.find(client => 
+        client.url === urlToOpen || 
+        client.url.includes(self.registration.scope) || 
+        client.url.includes('index.html')
+      );
+
+      if (matchingClient) {
+        // Si encontramos uno (sea App o Pestaña), lo enfocamos y recargamos
+        return matchingClient.focus().then(() => matchingClient.navigate(urlToOpen));
       }
-      // 2. Si no, abrimos la App
-      if (clients.openWindow) return clients.openWindow(targetUrl);
+      
+      // Si no hay ninguno abierto, abrimos uno nuevo
+      return clients.openWindow(urlToOpen);
     })
   );
 });
