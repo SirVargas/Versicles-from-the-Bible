@@ -1,4 +1,4 @@
-const CACHE_NAME = 'biblia-push-v3'; // Versión 3 para forzar actualización
+const CACHE_NAME = 'biblia-push-v4'; // Versión 4 para forzar actualización
 const urlsToCache = [
   './',
   './index.html',
