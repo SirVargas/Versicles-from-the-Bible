@@ -22,10 +22,13 @@
     <div id="debug" class="status"></div>
   </div>
 
-  <script type="module">
+    <script type="module">
     import { versesDB } from './js/verses.js';
 
     const PUBLIC_VAPID_KEY = 'BPsQjUu_RJyEgJlc86ZPxwu6SNLaRL5DisfvSMd9DrglSHS9wSoXPLCDWb1WKtqc2RIW86el-bwK5q6zN8AXOIk';
+
+    // Variable global para guardar el versículo actual
+    let currentVerseData = null;
 
     function urlBase64ToUint8Array(base64String) {
       const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -41,22 +44,34 @@
     function loadLocalVerse() {
        const today = new Date().getDate(); 
        const randomItem = versesDB[today % versesDB.length]; 
+       
+       // Guardamos el versículo en la variable global para usarlo al suscribir
+       currentVerseData = randomItem;
+
        document.getElementById('verse').innerText = `"${randomItem.t}"`;
        document.getElementById('reference').innerText = randomItem.r;
     }
 
+    function updateUI(isSubscribed) {
+        const btnSub = document.getElementById('btn-notify');
+        const btnUnsub = document.getElementById('btn-unsubscribe');
+        if (isSubscribed) {
+            btnSub.style.display = 'none';
+            btnUnsub.style.display = 'inline-block';
+        } else {
+            btnSub.style.display = 'inline-block';
+            btnUnsub.style.display = 'none';
+        }
+    }
+
     window.subscribeUser = async function() {
       if (!('serviceWorker' in navigator)) return;
-      
-      const btn = document.getElementById('btn-notify');
       const debug = document.getElementById('debug');
       debug.innerText = "⏳ Conectando...";
-      btn.disabled = true;
 
       try {
         const registration = await navigator.serviceWorker.register('sw.js');
         await navigator.serviceWorker.ready;
-
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') throw new Error("Permiso denegado");
 
@@ -65,33 +80,60 @@
           applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
         });
 
+        // AQUÍ ESTÁ EL TRUCO: Enviamos también el "verse" actual
+        const bodyData = {
+            subscription: subscription,
+            firstVerse: currentVerseData // Enviamos el texto que se ve en pantalla
+        };
+
         const response = await fetch('/api/subscribe', {
           method: 'POST',
-          body: JSON.stringify(subscription),
+          body: JSON.stringify(bodyData),
           headers: { 'Content-Type': 'application/json' }
         });
 
         if (response.ok) {
-            btn.style.display = 'none';
+            updateUI(true);
             debug.innerText = "✅ Conectado exitosamente.";
-            
-            // Ocultar mensaje después de 5 segundos
             setTimeout(() => { debug.style.display = 'none'; }, 5000);
-        } else {
-            throw new Error("Error del servidor");
         }
-
       } catch (err) {
         console.error(err);
         debug.innerText = "❌ Error: " + err.message;
-        btn.disabled = false;
-        
         if (err.name === 'InvalidAccessError') {
-             alert("Limpiando configuración antigua...");
              navigator.serviceWorker.getRegistration().then(reg => {
                  if(reg) reg.unregister().then(() => window.location.reload());
              });
         }
+      }
+    }
+
+    window.unsubscribeUser = async function() {
+      if (!('serviceWorker' in navigator)) return;
+      const debug = document.getElementById('debug');
+      debug.style.display = 'block';
+      debug.innerText = "⏳ Cancelando...";
+
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        
+        if (subscription) {
+            await fetch('/api/unsubscribe', {
+                method: 'POST',
+                body: JSON.stringify({ endpoint: subscription.endpoint }),
+                headers: { 'Content-Type': 'application/json' }
+            });
+            await subscription.unsubscribe();
+        }
+
+        updateUI(false);
+        debug.innerText = "🔕 Notificaciones desactivadas.";
+        setTimeout(() => { debug.style.display = 'none'; }, 5000);
+
+      } catch (err) {
+        console.error(err);
+        debug.innerText = "❌ Error al cancelar.";
       }
     }
 
@@ -101,12 +143,7 @@
       navigator.serviceWorker.ready.then(async (reg) => {
         try {
           const sub = await reg.pushManager.getSubscription();
-          if (sub) {
-            document.getElementById('btn-notify').style.display = 'none';
-            // Mensaje discreto si ya está activo
-             // document.getElementById('debug').innerText = "✅";
-              console.log("Suscripción activa ✅");
-          }
+          updateUI(!!sub);
         } catch(e){}
       });
     }
