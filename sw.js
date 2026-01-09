@@ -1,33 +1,37 @@
-const CACHE_NAME = 'biblia-v10-FORCE-UPDATE'; // <--- CAMBIO CRÍTICO
+// --- CONFIGURACIÓN DE VERSIÓN ---
+// El index.html lee esto para el footer. ¡Cámbialo cuando hagas updates!
+const CACHE_NAME = 'biblia-v11-SYNC-FIX'; 
+
 const urlsToCache = [
   './',
   './index.html',
   './js/verses.js',
   './img/icon.png',
+  './img/badge.png',
   './manifest.json'
 ];
 
+// 1. Instalación (Fuerza la espera para actualizar rápido)
 self.addEventListener('install', (event) => {
-  self.skipWaiting(); // <--- OBLIGA A ACTIVARSE DE INMEDIATO
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(urlsToCache))
   );
 });
 
+// 2. Activación (Borra cachés viejos para evitar conflictos)
 self.addEventListener('activate', (event) => {
   event.waitUntil(caches.keys().then((cacheNames) => Promise.all(
     cacheNames.map((cacheName) => {
-      if (cacheName !== CACHE_NAME) {
-          console.log("Borrando caché viejo:", cacheName);
-          return caches.delete(cacheName);
-      }
+      if (cacheName !== CACHE_NAME) return caches.delete(cacheName);
     })
   )));
-  self.clients.claim(); // <--- TOMA CONTROL INMEDIATO DE LA PÁGINA
+  self.clients.claim(); // Toma control inmediato
 });
 
+// 3. Intercepción de Red (Estrategia: Caché primero, excepto API)
 self.addEventListener('fetch', (event) => {
-  // Las APIs NUNCA se cachean, siempre van a red
+  // Las APIs NUNCA se cachean, van directo a la red
   if (event.request.url.includes('/api/')) {
       return event.respondWith(fetch(event.request));
   }
@@ -37,7 +41,7 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// --- PUSH CON ETIQUETA (TAG) PARA EVITAR ACUMULACIÓN ---
+// 4. MANEJO DE NOTIFICACIONES (PUSH)
 self.addEventListener('push', function(event) {
   let data = { title: 'Biblia', body: 'Nueva bendición disponible', url: './' };
   
@@ -53,11 +57,13 @@ self.addEventListener('push', function(event) {
   const options = {
     body: data.body,
     icon: './img/icon.png',
-    badge: './img/badge.png', // Asegúrate de tener este archivo
+    badge: './img/badge.png', // Icono pequeño (silueta blanca)
     data: { url: data.url },
     requireInteraction: true,
-    tag: 'verse-of-the-day', // <--- ESTA ETIQUETA HACE LA MAGIA (Reemplaza la anterior)
-    renotify: true
+    
+    // --- TRUCOS PARA NO ACUMULAR ---
+    tag: 'verse-of-the-day', // Reemplaza cualquier notificación anterior con este ID
+    renotify: true           // Vuelve a sonar/vibrar aunque reemplace la vieja
   };
 
   event.waitUntil(
@@ -65,16 +71,21 @@ self.addEventListener('push', function(event) {
   );
 });
 
+// 5. CLIC EN NOTIFICACIÓN
 self.addEventListener('notificationclick', function(event) {
-  event.notification.close();
+  event.notification.close(); // Cierra la notificación
+  
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+      // Intenta encontrar la ventana de la app ya abierta
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
+        // Si está abierta, enfócala y RECARGA para ver el nuevo versículo
         if (client.url.includes(self.registration.scope)) {
-            return client.focus().then(() => client.navigate('./')); // Recarga forzosa
+            return client.focus().then(() => client.navigate('./'));
         }
       }
+      // Si no está abierta, abre una nueva
       if (clients.openWindow) return clients.openWindow('./');
     })
   );
