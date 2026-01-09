@@ -34,6 +34,34 @@
 
     let currentVerseData = null;
 
+    // Función auxiliar para dibujar en pantalla
+    function renderVerse(data) {
+        currentVerseData = data;
+        document.getElementById('verse').innerText = `"${data.t}"`;
+        document.getElementById('reference').innerText = data.r;
+    }
+
+    // --- NUEVA LÓGICA DE CARGA HÍBRIDA ---
+    async function loadSmartVerse() {
+       try {
+           // 1. Intentamos obtener el versículo sincronizado del servidor
+           const response = await fetch('/api/current-verse');
+           if (response.ok) {
+               const serverData = await response.json();
+               console.log("📡 Versículo sincronizado cargado.");
+               renderVerse(serverData);
+               return;
+           }
+       } catch (e) {
+           console.log("📴 Offline o Error API, usando local.");
+       }
+
+       // 2. Si falla (Offline), usamos la lógica local por fecha
+       const today = new Date().getDate(); 
+       const randomItem = versesDB[today % versesDB.length]; 
+       renderVerse(randomItem);
+    }
+
     function urlBase64ToUint8Array(base64String) {
       const padding = '='.repeat((4 - base64String.length % 4) % 4);
       const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -43,14 +71,6 @@
         outputArray[i] = rawData.charCodeAt(i);
       }
       return outputArray;
-    }
-
-    function loadLocalVerse() {
-       const today = new Date().getDate(); 
-       const randomItem = versesDB[today % versesDB.length]; 
-       currentVerseData = randomItem;
-       document.getElementById('verse').innerText = `"${randomItem.t}"`;
-       document.getElementById('reference').innerText = randomItem.r;
     }
 
     function updateUI(isSubscribed) {
@@ -73,36 +93,24 @@
         await navigator.serviceWorker.ready;
         
         const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-            console.warn("⚠️ Permiso denegado por el usuario");
-            return;
-        }
+        if (permission !== 'granted') return;
 
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
         });
 
-        // Enviar al backend
         const response = await fetch('/api/subscribe', {
           method: 'POST',
           body: JSON.stringify({ subscription, firstVerse: currentVerseData }),
           headers: { 'Content-Type': 'application/json' }
         });
 
-        if (response.ok) {
-            console.log("✅ Suscripción exitosa y guardada en DB.");
-            updateUI(true);
-        } else {
-            const errData = await response.json();
-            console.error("❌ Error del servidor:", errData);
-        }
+        if (response.ok) updateUI(true);
 
       } catch (err) {
-        console.error("❌ Error Crítico en Suscripción:", err);
-        // Si la llave es inválida, limpiamos para evitar bucles de error
+        console.error("Error suscribiendo:", err);
         if (err.name === 'InvalidAccessError') {
-             console.warn("♻️ Limpiando SW corrupto...");
              navigator.serviceWorker.getRegistration().then(reg => {
                  if(reg) reg.unregister().then(() => window.location.reload());
              });
@@ -123,22 +131,19 @@
                 headers: { 'Content-Type': 'application/json' }
             });
             await subscription.unsubscribe();
-            console.log("✅ Desuscripción completa.");
         }
         updateUI(false);
-      } catch (err) {
-        console.error("❌ Error al desuscribir:", err);
-      }
+      } catch (err) { console.error(err); }
     }
 
-    loadLocalVerse();
+    // Iniciar carga inteligente
+    loadSmartVerse();
     
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then(async (reg) => {
         try {
           const sub = await reg.pushManager.getSubscription();
           updateUI(!!sub);
-          console.log(sub ? "ℹ️ Usuario ya suscrito." : "ℹ️ Usuario no suscrito.");
         } catch(e){}
       });
     }
