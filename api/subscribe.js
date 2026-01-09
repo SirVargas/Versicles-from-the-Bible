@@ -4,24 +4,16 @@ import webPush from 'web-push';
 const uri = process.env.MONGODB_URI;
 const options = {};
 
-// Configuración VAPID
-try {
-    const publicKey = process.env.VAPID_PUBLIC_KEY;
-    const privateKey = process.env.VAPID_PRIVATE_KEY;
-
-    if (!publicKey || !privateKey) {
-        console.error("❌ [API] Error Crítico: Faltan las llaves VAPID en Vercel.");
-    } else {
-        webPush.setVapidDetails(
-          'mailto:admin@bibliapp.com', 
-          publicKey,
-          privateKey
-        );
-        console.log("✅ [API] VAPID configurado.");
-    }
-} catch (configError) {
-    console.error("❌ [API] Error configurando VAPID:", configError);
+// Validación crítica al inicio
+if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+    console.error("❌ [API] Error Crítico: Faltan llaves VAPID en Vercel.");
 }
+
+webPush.setVapidDetails(
+  'mailto:admin@bibliapp.com', 
+  process.env.VAPID_PUBLIC_KEY,
+  process.env.VAPID_PRIVATE_KEY
+);
 
 let client;
 let clientPromise;
@@ -46,63 +38,46 @@ export default async function handler(req, res) {
     const { subscription, firstVerse } = req.body;
     
     if (!subscription || !subscription.endpoint) {
-        return res.status(400).json({ error: 'Falta suscripción válida' });
+        console.warn("⚠️ [API] Intento de suscripción inválida recibida.");
+        return res.status(400).json({ error: 'Datos inválidos' });
     }
 
     const client = await clientPromise;
     const db = client.db('biblia_app'); 
     const collection = db.collection('subscriptions');
 
-    // Guardar en DB
     await collection.updateOne(
       { endpoint: subscription.endpoint },
       { $set: subscription },
       { upsert: true }
     );
 
-    // Preparar mensaje
+    // Preparar Bienvenida
     const title = firstVerse ? `¡Bienvenido! Tu palabra de hoy:` : '¡Suscripción Activa!';
     const body = firstVerse ? `${firstVerse.t} (${firstVerse.r})` : 'Recibirás versículos de bendición automáticamente. 🙏';
 
     const payload = JSON.stringify({
       title: title,
       body: body,
-      icon: "https://sirvargas.github.io/Versicles-from-the-Bible/img/icon.png",
-      badge: "https://sirvargas.github.io/Versicles-from-the-Bible/img/icon.png",
+      icon: "https://versicles-from-the-bible.vercel.app/img/icon.png",
+      badge: "https://versicles-from-the-bible.vercel.app/img/icon.png",
       url: "./"
     });
 
-    // --- BLOQUE DE ENVÍO CON DEBUG FORENSE ---
-    let pushResult = { success: false, detail: 'No intentado' };
-    
+    // --- LOG CRÍTICO SOLO SI FALLA ---
     try {
-        console.log("🚀 [API] Intentando enviar Push...");
         await webPush.sendNotification(subscription, payload);
-        console.log("✅ [API] Push enviado correctamente.");
-        pushResult = { success: true, detail: 'Enviado OK' };
+        console.log("✅ [API] Bienvenida enviada correctamente.");
     } catch (e) {
-        console.error("❌ [API] ERROR WEB-PUSH DETECTADO:");
-        console.error(`👉 StatusCode: ${e.statusCode}`);
-        console.error(`👉 Body: ${e.body}`);
-        console.error(`👉 Headers: ${JSON.stringify(e.headers)}`);
-        
-        // Devolvemos estos detalles al Frontend (Eruda)
-        pushResult = { 
-            success: false, 
-            statusCode: e.statusCode, // 401, 400, 410, etc.
-            body: e.body,             // Mensaje de Google
-            message: e.message 
-        };
+        console.error("❌ [API] Error enviando Push de Bienvenida:");
+        console.error(`👉 Status: ${e.statusCode}`);
+        console.error(`👉 Google dice: ${e.body}`);
     }
-    // ----------------------------------------
 
-    return res.status(201).json({ 
-        message: 'Guardado.', 
-        pushStatus: pushResult 
-    });
+    return res.status(201).json({ message: 'Suscrito correctamente.' });
 
   } catch (error) {
-    console.error("❌ [API] Error interno:", error);
-    return res.status(500).json({ error: error.message });
+    console.error("❌ [API] Error Interno del Servidor:", error);
+    return res.status(500).json({ error: 'Error interno' });
   }
 }
