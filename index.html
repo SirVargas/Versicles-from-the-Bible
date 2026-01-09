@@ -25,7 +25,6 @@
   <script type="module">
     import { versesDB } from './js/verses.js';
 
-    // LLAVE DE LA FOTO (LIMPIA Y SIN ESPACIOS)
     const PUBLIC_VAPID_KEY = 'BPsQjUu_RJyEgJlc86ZPxwu6SNLaRL5DisfvSMd9DrglSHS9wSoXPLCDWb1WKtqc2RIW86el-bwK5q6zN8AXOIk';
 
     function urlBase64ToUint8Array(base64String) {
@@ -61,7 +60,6 @@
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') throw new Error("Permiso denegado");
 
-        // AQUÍ USAMOS LA LLAVE PÚBLICA CORREGIDA
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
@@ -76,7 +74,9 @@
         if (response.ok) {
             btn.style.display = 'none';
             debug.innerText = "✅ Conectado exitosamente.";
-            alert("¡Listo! Recibirás versículos cada 30 minutos.");
+            
+            // Ocultar mensaje después de 5 segundos
+            setTimeout(() => { debug.style.display = 'none'; }, 5000);
         } else {
             throw new Error("Error del servidor");
         }
@@ -86,9 +86,8 @@
         debug.innerText = "❌ Error: " + err.message;
         btn.disabled = false;
         
-        // Limpieza automática si hay conflicto de llaves
         if (err.name === 'InvalidAccessError') {
-             alert("Limpiando configuración antigua... Intenta de nuevo.");
+             alert("Limpiando configuración antigua...");
              navigator.serviceWorker.getRegistration().then(reg => {
                  if(reg) reg.unregister().then(() => window.location.reload());
              });
@@ -98,14 +97,15 @@
 
     loadLocalVerse();
     
-    // Verificar estado
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then(async (reg) => {
         try {
           const sub = await reg.pushManager.getSubscription();
           if (sub) {
             document.getElementById('btn-notify').style.display = 'none';
-            document.getElementById('debug').innerText = "✅ Sistema activo.";
+            // Mensaje discreto si ya está activo
+             // document.getElementById('debug').innerText = "✅";
+              console.log("Suscripción activa ✅");
           }
         } catch(e){}
       });
