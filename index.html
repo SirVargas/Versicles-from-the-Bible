@@ -37,10 +37,9 @@
   <script type="module">
     import { versesDB } from './js/verses.js';
 
-    const PUBLIC_VAPID_KEY = 'BLAmSvWiwybGELdtlKxn1XH_ftdsMs2IpWshmmPWGUF3ndWSS06tXY4oFAcUEHbYQPcDaaOl_6cwNjaFM0bmUhI';
+    const PUBLIC_VAPID_KEY = 'BLAmSvWiwybGELdtlKxn1XH_ftdsMs2IpWshmMPWGUF3ndWSS06tXY4oFAcUHEbYQPcDaaOl_6cwNjaFM0bmUhI';
     let currentVerseData = null;
 
-    // --- Leer versión del SW para el footer ---
     async function showVersionFromSW() {
         try {
             const response = await fetch('./sw.js?t=' + new Date().getTime());
@@ -51,9 +50,7 @@
                 const footer = document.getElementById('version-footer');
                 footer.innerText = `App: ${version}`;
             }
-        } catch (e) {
-            document.getElementById('version-footer').innerText = "v?.?";
-        }
+        } catch (e) { document.getElementById('version-footer').innerText = "v?.?"; }
     }
 
     function renderVerse(data) {
@@ -62,7 +59,6 @@
         document.getElementById('reference').innerText = data.r;
     }
 
-    // --- Carga Inteligente (API -> Local) ---
     async function loadSmartVerse() {
        try {
            const response = await fetch('/api/current-verse?t=' + new Date().getTime());
@@ -78,7 +74,7 @@
        renderVerse(randomItem);
     }
 
-    // --- Sensor de Visibilidad ---
+    // Sensor de Visibilidad
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") loadSmartVerse();
     });
@@ -109,7 +105,7 @@
     window.subscribeUser = async function() {
       if (!('serviceWorker' in navigator)) return;
       try {
-        const registration = await navigator.serviceWorker.ready; // Usar el ya registrado
+        const registration = await navigator.serviceWorker.ready;
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
@@ -142,21 +138,21 @@
       } catch (err) { console.error(err); }
     }
 
-    // --- Inicialización ---
     showVersionFromSW();
     loadSmartVerse();
     
-    // --- REGISTRO DEL SERVICE WORKER (CON FORZADO DE UPDATE) ---
+    // --- CORRECCIÓN AQUÍ: Registro Normal ---
     if ('serviceWorker' in navigator) {
-      // ?v=TIMESTAMP obliga al navegador a comprobar si el archivo cambió
-      navigator.serviceWorker.register(`sw.js?v=${new Date().getTime()}`).then(reg => {
+      // 1. Registro simple (sin timestamp para evitar bucles)
+      navigator.serviceWorker.register('sw.js').then(reg => {
           
+          // 2. Solo recargamos si hay un SW NUEVO esperando
           reg.onupdatefound = () => {
               const installingWorker = reg.installing;
               installingWorker.onstatechange = () => {
                   if (installingWorker.state === 'installed') {
                       if (navigator.serviceWorker.controller) {
-                          console.log("🔄 Update encontrado. Recargando...");
+                          console.log("Nueva versión disponible. Recargando...");
                           window.location.reload();
                       }
                   }
