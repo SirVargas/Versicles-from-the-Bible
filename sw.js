@@ -1,4 +1,4 @@
-const CACHE_NAME = 'biblia-v20-anination'; // Subimos versión
+const CACHE_NAME = 'biblia-v20-text-animation'; // Subimos versión
 const urlsToCache = [
   '/',                
   './index.html',
