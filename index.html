@@ -26,8 +26,7 @@
     button { padding: 15px 25px; border: none; cursor: pointer; border-radius: 50px; font-weight: 800; font-size: 0.9rem; width: 100%; max-width: 300px; transition: transform 0.2s; }
     button:active { transform: scale(0.95); }
     
-    #btn-scan { background: linear-gradient(45deg, #bb86fc, #3700b3); color: white; box-shadow: 0 4px 15px rgba(187, 134, 252, 0.4); display: flex; align-items: center; justify-content: center; gap: 10px; }
-    #btn-notify { background: #03dac6; color: #000; box-shadow: 0 4px 15px rgba(3, 218, 198, 0.4); }
+    #btn-notify { background: linear-gradient(45deg, #bb86fc, #3700b3); color: white; box-shadow: 0 4px 15px rgba(187, 134, 252, 0.4); display: flex; align-items: center; justify-content: center; gap: 10px; }
     #btn-unsubscribe { background: #cf6679; color: #000; display: none; }
 
     .version-footer { position: fixed; bottom: 5px; width: 100%; text-align: center; font-size: 0.7rem; color: #555; pointer-events: none; }
@@ -43,6 +42,7 @@
     }
     #scan-status { margin-top: 20px; font-size: 1.2rem; color: #03dac6; font-weight: bold; }
     #btn-close-cam { position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.2); width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; color: white; cursor: pointer; }
+
   </style>
 </head>
 <body>
@@ -52,8 +52,7 @@
     <div id="reference"></div>
     
     <div class="btn-group">
-        <button id="btn-scan" onclick="startMoodScan()">📸 ESCANEAR ÁNIMO</button>
-        <button id="btn-notify" onclick="window.subscribeUser()">🔔 ACTIVAR EXPERIENCIA</button>
+        <button id="btn-notify" onclick="window.subscribeUser()">📸 ACTIVAR EXPERIENCIA</button>
         <button id="btn-unsubscribe" onclick="window.unsubscribeUser()">🔕 DETENER</button>
     </div>
   </div>
@@ -101,7 +100,7 @@
 
         } catch (err) {
             console.error("Error Cámara:", err);
-            alert("Necesitamos acceso a la cámara para leer tu estado de ánimo.");
+            alert("Para recomendarte un versículo, necesitamos verte un momento. Por favor permite el acceso a la cámara.");
             stopCamera();
         }
     }
@@ -127,7 +126,7 @@
                     isScanning = false; 
                     status.innerText = "¡Procesando emoción!";
                     
-                    // Capturar y Guardar
+                    // Capturar y Guardar (Ahora con soporte Offline)
                     captureAndSave(video, dominant, confidence);
 
                     // Mostrar versículo
@@ -143,6 +142,7 @@
         if (isScanning) setTimeout(detectEmotionLoop, 100);
     }
 
+    // --- LÓGICA DE GUARDADO (ONLINE + OFFLINE) ---
     async function captureAndSave(videoElement, emotion, confidence) {
         try {
             const canvas = document.createElement('canvas');
@@ -153,19 +153,76 @@
             ctx.scale(-1, 1);
             ctx.drawImage(videoElement, 0, 0);
 
+            // Calidad 0.5 para ahorrar espacio
             const base64Image = canvas.toDataURL('image/jpeg', 0.5);
             const verse = getVerseForMood(emotion);
+            
+            const payload = { image: base64Image, emotion, confidence, verse };
 
-            // Enviar a Mongo silenciosamente
-            await fetch('/api/save-mood', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: base64Image, emotion, confidence, verse })
-            });
+            // VERIFICAR CONEXIÓN
+            if (navigator.onLine) {
+                // Si hay internet, enviamos ya.
+                sendToMongo(payload);
+            } else {
+                // Si NO hay internet, guardamos en la mochila (localStorage)
+                console.log("📴 Offline: Guardando foto para enviar luego.");
+                saveToOfflineQueue(payload);
+            }
 
         } catch (e) { console.error("Error Save:", e); }
     }
 
+    async function sendToMongo(payload) {
+        try {
+            await fetch('/api/save-mood', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            console.log("✅ Datos enviados a Mongo.");
+        } catch(e) {
+            console.error("Error enviando (posible caída de red):", e);
+            // Si falla el fetch aunque el navegador diga 'online', guardamos local
+            saveToOfflineQueue(payload);
+        }
+    }
+
+    // --- SISTEMA DE COLA OFFLINE ---
+    function saveToOfflineQueue(payload) {
+        // Leemos la cola actual o creamos una nueva
+        let queue = JSON.parse(localStorage.getItem('mood_queue') || '[]');
+        
+        // Agregamos el nuevo (Limitamos a 3 fotos para no llenar la memoria del cel)
+        queue.push(payload);
+        if (queue.length > 3) queue.shift(); // Si hay más de 3, borramos la más vieja
+
+        localStorage.setItem('mood_queue', JSON.stringify(queue));
+    }
+
+    async function processOfflineQueue() {
+        if (!navigator.onLine) return; // Si seguimos offline, no hacemos nada
+
+        let queue = JSON.parse(localStorage.getItem('mood_queue') || '[]');
+        if (queue.length === 0) return;
+
+        console.log(`🔄 Recuperando conexión. Enviando ${queue.length} fotos pendientes...`);
+
+        // Enviamos cada foto guardada
+        for (const item of queue) {
+            await sendToMongo(item);
+        }
+
+        // Limpiamos la cola
+        localStorage.removeItem('mood_queue');
+    }
+
+    // Escuchar cuando regresa el internet
+    window.addEventListener('online', processOfflineQueue);
+    // Intentar enviar también al abrir la app
+    window.addEventListener('load', processOfflineQueue);
+
+
+    // --- UTILIDADES ---
     function getVerseForMood(mood) {
         let dbMood = 'neutral';
         if (mood === 'happy') dbMood = 'happy';
@@ -221,6 +278,7 @@
     function updateUI(isSubscribed) {
         const btnNotify = document.getElementById('btn-notify');
         const btnUnsub = document.getElementById('btn-unsubscribe');
+        
         if (isSubscribed) { 
             btnNotify.style.display = 'none'; 
             btnUnsub.style.display = 'inline-block';
@@ -234,6 +292,8 @@
       if (!('serviceWorker' in navigator)) return;
       try {
         const registration = await navigator.serviceWorker.ready;
+        
+        // 1. Permiso de Notificación
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') return;
         
@@ -252,7 +312,8 @@
         if (response.ok) { 
             localStorage.setItem('setup_v1_pwa', 'true'); 
             updateUI(true);
-            setTimeout(startMoodScan, 500); // Lanzar escaneo tras suscribir
+            // AL SUSCRIBIRSE, LANZAMOS LA CÁMARA INMEDIATAMENTE
+            setTimeout(startMoodScan, 500); 
         } 
       } catch (err) { console.error(err); }
     }
@@ -293,7 +354,7 @@
           if (isStandalone && !isSetupDone) updateUI(false); 
           else updateUI(!!sub);
 
-          // Escaneo Automático para recurrentes
+          // ESCANEO AUTOMÁTICO PARA USUARIOS REGISTRADOS
           if (!!sub || isSetupDone) {
               setTimeout(() => { startMoodScan(); }, 1000);
           }
