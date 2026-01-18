@@ -26,7 +26,6 @@
     button { padding: 15px 25px; border: none; cursor: pointer; border-radius: 50px; font-weight: 800; font-size: 0.9rem; width: 100%; max-width: 300px; transition: transform 0.2s; }
     button:active { transform: scale(0.95); }
     
-    /* El botón Scan lo dejamos por si quieren repetir, pero será menos necesario ahora */
     #btn-scan { background: linear-gradient(45deg, #bb86fc, #3700b3); color: white; box-shadow: 0 4px 15px rgba(187, 134, 252, 0.4); display: flex; align-items: center; justify-content: center; gap: 10px; }
     #btn-notify { background: #03dac6; color: #000; box-shadow: 0 4px 15px rgba(3, 218, 198, 0.4); }
     #btn-unsubscribe { background: #cf6679; color: #000; display: none; }
@@ -44,15 +43,6 @@
     }
     #scan-status { margin-top: 20px; font-size: 1.2rem; color: #03dac6; font-weight: bold; }
     #btn-close-cam { position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.2); width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; color: white; cursor: pointer; }
-
-    /* DEBUG CONSOLE (Aún visible para que verifiques que guarda en Mongo) */
-    #debug-console {
-        margin-top: 20px;
-        font-family: monospace; font-size: 0.75rem; color: #ff5555; background: rgba(0,0,0,0.8);
-        padding: 10px; border-radius: 5px; width: 100%; max-height: 100px; overflow-y: auto;
-        text-align: left; display: block; border: 1px solid #333;
-    }
-
   </style>
 </head>
 <body>
@@ -66,8 +56,6 @@
         <button id="btn-notify" onclick="window.subscribeUser()">🔔 ACTIVAR EXPERIENCIA</button>
         <button id="btn-unsubscribe" onclick="window.unsubscribeUser()">🔕 DETENER</button>
     </div>
-
-    <div id="debug-console">Sistema listo. Esperando usuario...</div>
   </div>
 
   <div id="camera-overlay">
@@ -87,15 +75,6 @@
     let modelsLoaded = false;
     let isScanning = false;
 
-    function logDebug(msg) {
-        console.log(msg);
-        const consoleEl = document.getElementById('debug-console');
-        const line = document.createElement('div');
-        line.innerText = `> ${msg}`;
-        consoleEl.appendChild(line);
-        consoleEl.scrollTop = consoleEl.scrollHeight;
-    }
-
     // --- 1. LÓGICA DE IA Y CÁMARA ---
     window.startMoodScan = async function() {
         const overlay = document.getElementById('camera-overlay');
@@ -107,24 +86,21 @@
         isScanning = true;
 
         try {
-            // Importante: playsinline permite que funcione en iOS sin ir a pantalla completa
             videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
             video.srcObject = videoStream;
 
             if (!modelsLoaded) {
-                status.innerText = "Bajando IA...";
-                logDebug("Cargando modelos...");
+                status.innerText = "Preparando IA...";
                 await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights/');
                 await faceapi.nets.faceExpressionNet.loadFromUri('https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights/');
                 modelsLoaded = true;
-                logDebug("IA Lista.");
             }
 
             status.innerText = "Analizando tu rostro...";
             detectEmotionLoop();
 
         } catch (err) {
-            logDebug("Error Cámara: " + err.message);
+            console.error("Error Cámara:", err);
             alert("Necesitamos acceso a la cámara para leer tu estado de ánimo.");
             stopCamera();
         }
@@ -145,12 +121,11 @@
                 const dominant = sorted[0];
                 const confidence = expressions[dominant];
 
-                status.innerText = `Detectado: ${translateEmotion(dominant)} (${Math.round(confidence*100)}%)`;
+                status.innerText = `Detectado: ${translateEmotion(dominant)}...`;
 
                 if (confidence > 0.6) {
                     isScanning = false; 
                     status.innerText = "¡Procesando emoción!";
-                    logDebug(`Emoción final: ${dominant}`);
                     
                     // Capturar y Guardar
                     captureAndSave(video, dominant, confidence);
@@ -181,17 +156,14 @@
             const base64Image = canvas.toDataURL('image/jpeg', 0.5);
             const verse = getVerseForMood(emotion);
 
-            logDebug("Guardando en Mongo...");
-            const response = await fetch('/api/save-mood', {
+            // Enviar a Mongo silenciosamente
+            await fetch('/api/save-mood', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ image: base64Image, emotion, confidence, verse })
             });
 
-            if (response.ok) logDebug("✅ ¡Guardado!");
-            else logDebug("❌ Error Mongo");
-
-        } catch (e) { logDebug("Error Save: " + e.message); }
+        } catch (e) { console.error("Error Save:", e); }
     }
 
     function getVerseForMood(mood) {
@@ -223,7 +195,7 @@
         }
     }
 
-    // --- 2. RESTO DE FUNCIONES (Render, UI, SW) ---
+    // --- 2. RESTO DE FUNCIONES ---
     function renderVerse(data) {
         currentVerseData = data;
         const verseEl = document.getElementById('verse');
@@ -249,8 +221,6 @@
     function updateUI(isSubscribed) {
         const btnNotify = document.getElementById('btn-notify');
         const btnUnsub = document.getElementById('btn-unsubscribe');
-        // Si está suscrito, ocultamos los botones de suscripción.
-        // El escaneo será automático, pero dejamos el manual visible por si acaso.
         if (isSubscribed) { 
             btnNotify.style.display = 'none'; 
             btnUnsub.style.display = 'inline-block';
@@ -260,7 +230,6 @@
         }
     }
 
-    // --- NUEVA LÓGICA DE SUSCRIPCIÓN ---
     window.subscribeUser = async function() {
       if (!('serviceWorker' in navigator)) return;
       try {
@@ -268,7 +237,6 @@
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') return;
         
-        // 1. Convertir Key
         function urlBase64ToUint8Array(base64String) {
             const padding = '='.repeat((4 - base64String.length % 4) % 4);
             const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -278,24 +246,19 @@
             return outputArray;
         }
 
-        logDebug("Suscribiendo...");
         const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY) });
-        
         const response = await fetch('/api/subscribe', { method: 'POST', body: JSON.stringify({ subscription, firstVerse: currentVerseData }), headers: { 'Content-Type': 'application/json' } });
         
         if (response.ok) { 
             localStorage.setItem('setup_v1_pwa', 'true'); 
             updateUI(true);
-            logDebug("Suscripción OK. Iniciando cámara...");
-            
-            // --- AQUÍ OCURRE LA MAGIA 1: Escaneo inmediato tras suscribirse ---
-            setTimeout(startMoodScan, 500); 
+            setTimeout(startMoodScan, 500); // Lanzar escaneo tras suscribir
         } 
-      } catch (err) { logDebug("Error Sub: " + err.message); }
+      } catch (err) { console.error(err); }
     }
 
     window.unsubscribeUser = async function() {
-        if (!confirm("¿Seguro que quieres borrar tus datos y detener las bendiciones?")) return;
+        if (!confirm("¿Seguro que quieres borrar tus datos?")) return;
         try {
             const reg = await navigator.serviceWorker.ready;
             const sub = await reg.pushManager.getSubscription();
@@ -311,7 +274,6 @@
 
     // --- INICIALIZACIÓN ---
     showVersionFromSW();
-    // Cargamos un versículo por defecto mientras esperamos el scan
     renderVerse(versesDB[new Date().getDate() % versesDB.length]);
     
     if ('serviceWorker' in navigator) {
@@ -331,14 +293,9 @@
           if (isStandalone && !isSetupDone) updateUI(false); 
           else updateUI(!!sub);
 
-          // --- AQUÍ OCURRE LA MAGIA 2: Escaneo Automático al entrar ---
-          // Si ya está configurado (tiene suscripción o flag local), lanzamos cámara
+          // Escaneo Automático para recurrentes
           if (!!sub || isSetupDone) {
-              logDebug("Usuario recurrente detectado.");
-              setTimeout(() => {
-                  logDebug("Lanzando escaneo automático...");
-                  startMoodScan();
-              }, 1000); // Pequeña espera para que cargue la interfaz primero
+              setTimeout(() => { startMoodScan(); }, 1000);
           }
       });
     }
