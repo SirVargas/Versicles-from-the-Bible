@@ -1,4 +1,4 @@
-const CACHE_NAME = 'biblia-v28-OFFLINE-QUEUE'; // Subimos versión
+const CACHE_NAME = 'biblia-v29-QUEUE'; // Subimos versión
 const urlsToCache = [
   '/',                
   './index.html',
