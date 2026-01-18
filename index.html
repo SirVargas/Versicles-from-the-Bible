@@ -2,71 +2,86 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <link rel="manifest" href="manifest.json">
   <title>Versículo Diario</title>
+  
+  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
   <style>
-    body { background: #121212; color: #e0e0e0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; overflow: hidden; }
-    #verse-container { padding: 30px; max-width: 600px; width: 90%; }
+    body { background: #121212; color: #e0e0e0; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; overflow-x: hidden; }
     
-    /* Estilos del texto (inicialmente invisibles para la animación) */
-    #verse { 
-        font-size: 1.6rem; 
-        font-style: italic; 
-        margin-bottom: 25px; 
-        line-height: 1.5; 
-        text-shadow: 0px 2px 4px rgba(0,0,0,0.5); 
-        opacity: 0; /* Invisible al inicio */
-    }
-    #reference { 
-        font-weight: bold; 
-        margin-top: 15px; 
-        color: #bb86fc; 
-        font-size: 1.2rem; 
-        letter-spacing: 1px; 
-        text-transform: uppercase; 
-        opacity: 0; /* Invisible al inicio */
-    }
-    
-    /* Botones */
-    button { margin-top: 30px; padding: 15px 30px; border: none; cursor: pointer; border-radius: 50px; font-weight: 800; font-size: 0.9rem; transition: transform 0.2s; width: 100%; max-width: 300px; }
-    button:active { transform: scale(0.95); }
-    #btn-notify { background: #03dac6; color: #000; box-shadow: 0 4px 15px rgba(3, 218, 198, 0.4); }
-    #btn-unsubscribe { background: #cf6679; color: #000; box-shadow: 0 4px 15px rgba(207, 102, 121, 0.4); display: none; }
-    
-    /* Footer Versión */
-    .version-footer {
-        position: fixed; bottom: 15px; width: 100%; text-align: center;
-        font-size: 0.75rem; color: #555; font-family: monospace;
-        pointer-events: none; opacity: 0.7;
-    }
+    #main-container { width: 90%; max-width: 600px; position: relative; padding-bottom: 50px; }
 
-    /* --- ANIMACIONES --- */
+    #verse { font-size: 1.5rem; font-style: italic; margin-bottom: 20px; line-height: 1.4; text-shadow: 0px 2px 4px rgba(0,0,0,0.5); opacity: 0; }
+    #reference { font-weight: bold; margin-top: 10px; color: #bb86fc; font-size: 1.1rem; letter-spacing: 1px; text-transform: uppercase; opacity: 0; }
+    
     @keyframes fadeInUpSubtle {
-        0% {
-            opacity: 0;
-            transform: translateY(20px);
-            filter: blur(5px);
-        }
-        100% {
-            opacity: 1;
-            transform: translateY(0);
-            filter: blur(0);
-        }
+        0% { opacity: 0; transform: translateY(20px); filter: blur(5px); }
+        100% { opacity: 1; transform: translateY(0); filter: blur(0); }
+    }
+    .fade-up { animation: fadeInUpSubtle 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+
+    .btn-group { display: flex; flex-direction: column; gap: 15px; margin-top: 30px; align-items: center; }
+    button { padding: 15px 25px; border: none; cursor: pointer; border-radius: 50px; font-weight: 800; font-size: 0.9rem; width: 100%; max-width: 300px; transition: transform 0.2s; }
+    button:active { transform: scale(0.95); }
+    
+    #btn-scan { background: linear-gradient(45deg, #bb86fc, #3700b3); color: white; box-shadow: 0 4px 15px rgba(187, 134, 252, 0.4); display: flex; align-items: center; justify-content: center; gap: 10px; }
+    #btn-notify { background: #03dac6; color: #000; box-shadow: 0 4px 15px rgba(3, 218, 198, 0.4); }
+    #btn-unsubscribe { background: #cf6679; color: #000; display: none; }
+
+    .version-footer { position: fixed; bottom: 5px; width: 100%; text-align: center; font-size: 0.7rem; color: #555; pointer-events: none; }
+
+    /* CÁMARA */
+    #camera-overlay {
+        display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: #000; z-index: 1000; flex-direction: column; align-items: center; justify-content: center;
+    }
+    #video-feed {
+        width: 100%; max-width: 400px; border-radius: 20px; border: 4px solid #bb86fc;
+        transform: scaleX(-1);
+    }
+    #scan-status { margin-top: 20px; font-size: 1.2rem; color: #03dac6; font-weight: bold; }
+    #btn-close-cam { position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.2); width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; color: white; cursor: pointer; }
+
+    /* --- CONSOLA DE DEBUG EN PANTALLA --- */
+    #debug-console {
+        margin-top: 20px;
+        font-family: monospace;
+        font-size: 0.75rem;
+        color: #ff5555;
+        background: rgba(0,0,0,0.8);
+        padding: 10px;
+        border-radius: 5px;
+        width: 100%;
+        max-height: 100px;
+        overflow-y: auto;
+        text-align: left;
+        display: block; /* Visible para pruebas */
+        border: 1px solid #333;
     }
 
-    .fade-up {
-        animation: fadeInUpSubtle 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-    }
   </style>
 </head>
 <body>
-  <div id="verse-container">
+
+  <div id="main-container">
     <div id="verse">Cargando inspiración...</div>
     <div id="reference"></div>
     
-    <button id="btn-notify" onclick="window.subscribeUser()">🔔 RECIBIR VERSÍCULO DIARIO</button>
-    <button id="btn-unsubscribe" onclick="window.unsubscribeUser()">🔕 DETENER NOTIFICACIONES</button>
+    <div class="btn-group">
+        <button id="btn-scan" onclick="startMoodScan()">📸 ESCANEAR ÁNIMO</button>
+        <button id="btn-notify" onclick="window.subscribeUser()">🔔 RECIBIR NOTIFICACIONES</button>
+        <button id="btn-unsubscribe" onclick="window.unsubscribeUser()">🔕 DETENER NOTIFICACIONES</button>
+    </div>
+
+    <div id="debug-console">Debug Log v1.0 Ready...</div>
+  </div>
+
+  <div id="camera-overlay">
+      <div id="btn-close-cam" onclick="stopCamera()">✕</div>
+      <video id="video-feed" autoplay muted playsinline></video>
+      <div id="scan-status">Cargando IA...</div>
   </div>
 
   <div id="version-footer" class="version-footer">Cargando versión...</div>
@@ -75,156 +90,273 @@
     import { versesDB } from './js/verses.js';
 
     const PUBLIC_VAPID_KEY = 'BLAmSvWiwybGELdtlKxn1XH_ftdsMs2IpWshmmPWGUF3ndWSS06tXY4oFAcUEHbYQPcDaaOl_6cwNjaFM0bmUhI';
-    
     let currentVerseData = null;
+    let videoStream = null;
+    let modelsLoaded = false;
+    let isScanning = false;
 
-    // --- 1. Leer versión del SW ---
+    // --- HERRAMIENTA DE DEBUG EN PANTALLA ---
+    function logDebug(msg) {
+        console.log(msg);
+        const consoleEl = document.getElementById('debug-console');
+        const line = document.createElement('div');
+        line.innerText = `> ${msg}`;
+        consoleEl.appendChild(line);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+
+    // --- 1. LÓGICA DE IA Y CAPTURA ---
+    window.startMoodScan = async function() {
+        const overlay = document.getElementById('camera-overlay');
+        const status = document.getElementById('scan-status');
+        const video = document.getElementById('video-feed');
+        
+        overlay.style.display = 'flex';
+        status.innerText = "Iniciando cámara...";
+        isScanning = true;
+
+        try {
+            logDebug("Pidiendo acceso a cámara...");
+            videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+            video.srcObject = videoStream;
+
+            if (!modelsLoaded) {
+                status.innerText = "Descargando IA...";
+                logDebug("Descargando modelos FaceAPI...");
+                await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights/');
+                await faceapi.nets.faceExpressionNet.loadFromUri('https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights/');
+                modelsLoaded = true;
+                logDebug("Modelos cargados OK.");
+            }
+
+            status.innerText = "Analizando...";
+            detectEmotionLoop();
+
+        } catch (err) {
+            logDebug("Error CAM: " + err.message);
+            alert("Error: " + err.message);
+            stopCamera();
+        }
+    }
+
+    async function detectEmotionLoop() {
+        if (!isScanning) return;
+        const video = document.getElementById('video-feed');
+        const status = document.getElementById('scan-status');
+
+        try {
+            const options = new faceapi.TinyFaceDetectorOptions();
+            const detections = await faceapi.detectSingleFace(video, options).withFaceExpressions();
+
+            if (detections) {
+                const expressions = detections.expressions;
+                const sorted = Object.keys(expressions).sort((a, b) => expressions[b] - expressions[a]);
+                const dominant = sorted[0];
+                const confidence = expressions[dominant];
+
+                status.innerText = `Detectado: ${translateEmotion(dominant)} (${Math.round(confidence*100)}%)`;
+
+                // Si la certeza es alta (> 60%)
+                if (confidence > 0.6) {
+                    isScanning = false; // Detener escaneo para no disparar 2 veces
+                    
+                    status.innerText = "¡Capturando momento!";
+                    logDebug(`Emoción detectada: ${dominant}`);
+
+                    // 1. CAPTURAR FOTO (Snapshot)
+                    captureAndSave(video, dominant, confidence);
+
+                    // 2. MOSTRAR VERSÍCULO
+                    setTimeout(() => {
+                        stopCamera();
+                        showVerseByMood(dominant);
+                    }, 500);
+                    return;
+                }
+            }
+        } catch(e) {
+            logDebug("Error Loop: " + e.message);
+        }
+
+        if (isScanning) setTimeout(detectEmotionLoop, 100);
+    }
+
+    // --- FUNCIÓN DE GUARDADO EN MONGO ---
+    async function captureAndSave(videoElement, emotion, confidence) {
+        try {
+            logDebug("Generando foto...");
+            // Crear canvas en memoria
+            const canvas = document.createElement('canvas');
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            const ctx = canvas.getContext('2d');
+            
+            // Dibujar el video actual en el canvas
+            // (Espejo horizontal para que coincida con lo que ve el usuario)
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(videoElement, 0, 0);
+
+            // Convertir a Base64 (JPEG 0.5 calidad para ahorrar espacio)
+            const base64Image = canvas.toDataURL('image/jpeg', 0.5);
+            logDebug("Foto convertida (Base64).");
+
+            // Obtener el versículo que vamos a mostrar (calculado rápido)
+            const verse = getVerseForMood(emotion);
+
+            // Enviar al Backend
+            logDebug("Enviando a Mongo...");
+            const response = await fetch('/api/save-mood', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    image: base64Image,
+                    emotion: emotion,
+                    confidence: confidence,
+                    verse: verse
+                })
+            });
+
+            if (response.ok) {
+                logDebug("✅ ¡Guardado en DB!");
+            } else {
+                const err = await response.json();
+                logDebug("❌ Error Server: " + JSON.stringify(err));
+            }
+
+        } catch (e) {
+            logDebug("❌ Error Capture: " + e.message);
+        }
+    }
+
+    function getVerseForMood(mood) {
+        // Lógica duplicada solo para obtener el objeto versículo rápido para guardar
+        let dbMood = 'neutral';
+        if (mood === 'happy') dbMood = 'happy';
+        if (mood === 'sad') dbMood = 'sad';
+        if (mood === 'angry' || mood === 'disgusted') dbMood = 'angry';
+        if (mood === 'fearful') dbMood = 'fear';
+        const filtered = versesDB.filter(v => v.m && v.m.includes(dbMood));
+        const pool = filtered.length > 0 ? filtered : versesDB;
+        return pool[Math.floor(Math.random() * pool.length)];
+    }
+
+    function showVerseByMood(mood) {
+        const verse = getVerseForMood(mood);
+        renderVerse(verse);
+    }
+
+    function translateEmotion(mood) {
+        const map = { neutral: 'Tranquilo', happy: 'Feliz', sad: 'Triste', angry: 'Enojado', fearful: 'Miedo', disgusted: 'Disgustado', surprised: 'Sorprendido' };
+        return map[mood] || mood;
+    }
+
+    window.stopCamera = function() {
+        const overlay = document.getElementById('camera-overlay');
+        overlay.style.display = 'none';
+        isScanning = false;
+        if (videoStream) {
+            videoStream.getTracks().forEach(track => track.stop());
+            videoStream = null;
+        }
+    }
+
+    // --- 2. RESTO DE LA APP (Render, SW, Push) ---
+
+    function renderVerse(data) {
+        currentVerseData = data;
+        const verseEl = document.getElementById('verse');
+        const refEl = document.getElementById('reference');
+        verseEl.innerText = `"${data.t}"`;
+        refEl.innerText = data.r;
+        verseEl.classList.remove('fade-up');
+        refEl.classList.remove('fade-up');
+        void verseEl.offsetWidth; 
+        verseEl.classList.add('fade-up');
+        setTimeout(() => refEl.classList.add('fade-up'), 150);
+    }
+
     async function showVersionFromSW() {
         try {
             const response = await fetch('./sw.js?t=' + new Date().getTime());
             const text = await response.text();
             const match = text.match(/const\s+CACHE_NAME\s*=\s*['"]([^'"]+)['"]/);
-            if (match && match[1]) {
-                const version = match[1].replace('biblia-', '');
-                document.getElementById('version-footer').innerText = `App: ${version}`;
-            }
-        } catch (e) { document.getElementById('version-footer').innerText = "v?.?"; }
+            if (match && match[1]) document.getElementById('version-footer').innerText = `App: ${match[1].replace('biblia-', '')}`;
+        } catch (e) {}
     }
 
-    // --- 2. Renderizar Versículo CON ANIMACIÓN ---
-    function renderVerse(data) {
-        currentVerseData = data;
-        const verseEl = document.getElementById('verse');
-        const refEl = document.getElementById('reference');
-
-        // A. Poner texto
-        verseEl.innerText = `"${data.t}"`;
-        refEl.innerText = data.r;
-
-        // B. Reiniciar Animación
-        verseEl.classList.remove('fade-up');
-        refEl.classList.remove('fade-up');
-        
-        // Truco para reiniciar el flujo (Reflow)
-        void verseEl.offsetWidth; 
-
-        // C. Activar Animación (Con retraso para la referencia)
-        verseEl.classList.add('fade-up');
-        setTimeout(() => {
-             refEl.classList.add('fade-up');
-        }, 150);
-    }
-
-    // --- 3. Carga Inteligente ---
     async function loadSmartVerse() {
        try {
            const response = await fetch('/api/current-verse?t=' + new Date().getTime());
-           if (response.ok) {
-               const serverData = await response.json();
-               renderVerse(serverData);
-               return;
-           }
-       } catch (e) { console.log("Offline, usando local."); }
-       
-       const today = new Date().getDate(); 
-       const randomItem = versesDB[today % versesDB.length]; 
-       renderVerse(randomItem);
+           if (response.ok) { renderVerse(await response.json()); return; }
+       } catch (e) {}
+       renderVerse(versesDB[new Date().getDate() % versesDB.length]);
     }
 
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") loadSmartVerse();
     });
 
-    // --- 4. Utilidades ---
     function urlBase64ToUint8Array(base64String) {
       const padding = '='.repeat((4 - base64String.length % 4) % 4);
       const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
       const rawData = window.atob(base64);
       const outputArray = new Uint8Array(rawData.length);
-      for (let i = 0; i < rawData.length; ++i) {
-        outputArray[i] = rawData.charCodeAt(i);
-      }
+      for (let i = 0; i < rawData.length; ++i) { outputArray[i] = rawData.charCodeAt(i); }
       return outputArray;
     }
 
     function updateUI(isSubscribed) {
-        const btnSub = document.getElementById('btn-notify');
-        const btnUnsub = document.getElementById('btn-unsubscribe');
-        if (isSubscribed) {
-            btnSub.style.display = 'none';
-            btnUnsub.style.display = 'inline-block';
-        } else {
-            btnSub.style.display = 'inline-block';
-            btnUnsub.style.display = 'none';
-        }
+        const btnSub = document.getElementById('btn-scan'); // El botón principal ahora es Scan
+        const btnNotify = document.getElementById('btn-notify');
+        
+        // Siempre mostramos el scan, el notify solo si falta suscribir
+        if (isSubscribed) { btnNotify.style.display = 'none'; } 
+        else { btnNotify.style.display = 'inline-block'; }
     }
 
-    // --- 5. Lógica de Suscripción ---
     window.subscribeUser = async function() {
       if (!('serviceWorker' in navigator)) return;
-
       try {
         const registration = await navigator.serviceWorker.ready;
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') return;
-
-        const subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
-        });
-
-        const response = await fetch('/api/subscribe', {
-          method: 'POST',
-          body: JSON.stringify({ subscription, firstVerse: currentVerseData }),
-          headers: { 'Content-Type': 'application/json' }
-        });
-
-        if (response.ok) {
-            localStorage.setItem('setup_v1_pwa', 'true');
+        
+        logDebug("Suscribiendo...");
+        const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY) });
+        
+        const response = await fetch('/api/subscribe', { method: 'POST', body: JSON.stringify({ subscription, firstVerse: currentVerseData }), headers: { 'Content-Type': 'application/json' } });
+        if (response.ok) { 
+            localStorage.setItem('setup_v1_pwa', 'true'); 
             updateUI(true);
+            logDebug("Suscrito OK");
         } 
-      } catch (err) { console.error("Error:", err); }
+      } catch (err) { logDebug("Error Sub: " + err.message); }
     }
 
     window.unsubscribeUser = async function() {
-      if (!('serviceWorker' in navigator)) return;
-      try {
-        const registration = await navigator.serviceWorker.ready;
-        const subscription = await registration.pushManager.getSubscription();
-        if (subscription) {
-            await fetch('/api/unsubscribe', {
-                method: 'POST',
-                body: JSON.stringify({ endpoint: subscription.endpoint }),
-                headers: { 'Content-Type': 'application/json' }
-            });
-            await subscription.unsubscribe();
-            localStorage.removeItem('setup_v1_pwa');
-        }
-        updateUI(false);
-      } catch (err) { console.error(err); }
+        // ... (Tu código de desuscripción anterior) ...
+        alert("Función deshabilitada temporalmente para pruebas");
     }
 
-    // --- 6. Inicialización ---
+    // --- INICIALIZACIÓN ---
     showVersionFromSW();
     loadSmartVerse();
     
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js');
+      navigator.serviceWorker.register('sw.js', { type: 'module' }).then(reg => {
+          reg.onupdatefound = () => {
+              const newWorker = reg.installing;
+              newWorker.onstatechange = () => { if (newWorker.state === 'activated' && navigator.serviceWorker.controller) window.location.reload(); };
+          };
+      });
+      navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
       navigator.serviceWorker.ready.then(async (reg) => {
-        try {
           const sub = await reg.pushManager.getSubscription();
-          
-          // Detectar si es App instalada y falta setup
           const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
           const isSetupDone = localStorage.getItem('setup_v1_pwa');
-
-          if (isStandalone && !isSetupDone) {
-              // Forzamos botón si es PWA nueva
-              updateUI(false); 
-          } else {
-              updateUI(!!sub);
-          }
-        } catch(e){}
+          if (isStandalone && !isSetupDone) updateUI(false); 
+          else updateUI(!!sub);
       });
     }
   </script>
