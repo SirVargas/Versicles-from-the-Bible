@@ -19,6 +19,10 @@
     .fade-up { animation: fadeInUpSubtle 1.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
     @keyframes fadeInUpSubtle { 0% { opacity: 0; transform: translateY(20px); filter: blur(5px); } 100% { opacity: 1; transform: translateY(0); filter: blur(0); } }
 
+    /* Animación sutil para cuando la IA "piensa" */
+    @keyframes pulseText { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+    .analyzing { animation: pulseText 1.5s infinite ease-in-out; }
+
     .btn-group { display: flex; flex-direction: column; gap: 15px; margin-top: 30px; align-items: center; }
     button { padding: 15px 25px; border: none; cursor: pointer; border-radius: 50px; font-weight: 800; font-size: 0.9rem; width: 100%; max-width: 300px; transition: transform 0.2s; }
     button:active { transform: scale(0.95); }
@@ -40,7 +44,6 @@
     <div class="btn-group">
         <button id="btn-notify" onclick="window.subscribeUser()">📜 OBTENER SABIDURÍA</button>
         <button id="btn-unsubscribe" onclick="window.unsubscribeUser()">🔕 DETENER</button>
-        <button onclick="startMoodScan(true)" style="background: #333; font-size: 0.7rem; padding: 5px;">🔧 FORZAR SCAN</button>
     </div>
   </div>
 
@@ -62,49 +65,38 @@
     let lastScanTime = 0;
     let scanStartTime = 0;
     const SCAN_COOLDOWN = 15000; 
-    const SCAN_TIMEOUT = 10000; // Subimos a 10s para dar tiempo de debug
-
-    // --- LOGGING ---
-    function log(msg) { console.log(`[APP]: ${msg}`); }
+    const SCAN_TIMEOUT = 5000; // 5 segundos es suficiente para producción
 
     // --- IA LOGIC ---
     window.startMoodScan = async function(force = false) {
-        log("Intentando iniciar scan...");
-
-        if (isScanning) { log("🚫 Scan abortado: Ya está corriendo."); return; }
+        if (isScanning) return;
         
         const now = Date.now();
-        if (!force && (now - lastScanTime < SCAN_COOLDOWN)) {
-            log(`⏳ Scan abortado: Enfriamiento activo (${Math.round((SCAN_COOLDOWN - (now-lastScanTime))/1000)}s restantes).`);
-            return;
-        }
+        if (!force && (now - lastScanTime < SCAN_COOLDOWN)) return;
 
         isScanning = true;
         scanStartTime = Date.now();
-        log("🚀 Iniciando Cámara y Modelos...");
+
+        // Opcional: Feedback visual muy sutil
+        document.getElementById('reference').classList.add('analyzing');
 
         try {
             videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
             const video = document.getElementById('video-feed');
             video.srcObject = videoStream;
-            log("✅ Stream de video obtenido.");
-
-            // Asegurar que el video esté reproduciendo
-            await video.play().catch(e => log("Video play error (normal si es invisible): " + e));
+            // Forzar play para asegurar que arranque en iOS/Android
+            await video.play().catch(() => {});
 
             if (!modelsLoaded) {
-                log("📥 Descargando modelos IA (esto puede tardar)...");
                 await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights/');
                 await faceapi.nets.faceExpressionNet.loadFromUri('https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights/');
                 modelsLoaded = true;
-                log("✅ Modelos cargados.");
             }
 
-            log("👀 Comenzando bucle de detección...");
             detectEmotionLoop();
 
         } catch (err) {
-            console.error("❌ Error Fatal Cámara:", err);
+            // Si falla (permiso denegado), fallamos silenciosamente y dejamos el versículo actual
             handleScanFailure();
         }
     }
@@ -112,10 +104,8 @@
     async function detectEmotionLoop() {
         if (!isScanning) return;
         
-        // Timeout Debug
-        const elapsed = Date.now() - scanStartTime;
-        if (elapsed > SCAN_TIMEOUT) {
-            log(`⏰ TIMEOUT: Pasaron ${elapsed/1000}s sin detectar cara.`);
+        // Timeout
+        if (Date.now() - scanStartTime > SCAN_TIMEOUT) {
             handleScanFailure(); 
             return;
         }
@@ -132,30 +122,18 @@
                 const dominant = sorted[0];
                 const confidence = expressions[dominant];
 
-                // Bajamos umbral a 0.4 para facilitar pruebas
-                if (confidence > 0.4) {
-                    log(`🎯 ROSTRO DETECTADO: ${dominant} (${Math.round(confidence*100)}%)`);
-                    
+                if (confidence > 0.5) {
                     captureAndSave(video, dominant, confidence);
                     finishScan(dominant);
                     return;
-                } else {
-                    // Loguear intentos fallidos cada cierto tiempo para no saturar
-                    if (Math.random() > 0.8) log(`...viendo algo pero con poca confianza (${Math.round(confidence*100)}%)`);
                 }
-            } else {
-                // Loguear "nada" ocasionalmente
-                if (Math.random() > 0.9) log("...buscando rostro...");
             }
-        } catch(e) {
-            console.error("Error en loop IA:", e);
-        }
+        } catch(e) {}
 
         if (isScanning) setTimeout(detectEmotionLoop, 200);
     }
 
     function finishScan(mood) {
-        log("✨ Scan finalizado con éxito.");
         lastScanTime = Date.now();
         isScanning = false;
         stopCamera();
@@ -164,16 +142,15 @@
     }
 
     function handleScanFailure() {
-        log("⚠️ Fallo o Timeout. Cerrando cámara.");
         lastScanTime = Date.now();
         isScanning = false;
         stopCamera();
         document.getElementById('reference').classList.remove('analyzing');
+        // No cambiamos el versículo, dejamos el que está.
     }
 
     // --- GUARDADO ---
     async function captureAndSave(videoElement, emotion, confidence) {
-        log("📸 Generando foto...");
         try {
             const canvas = document.createElement('canvas');
             canvas.width = videoElement.videoWidth;
@@ -187,29 +164,19 @@
             const verse = getVerseForMood(emotion);
             const payload = { image: base64Image, emotion, confidence, verse };
 
-            if (navigator.onLine) {
-                log("📡 Enviando a Mongo...");
-                sendToMongo(payload);
-            } else {
-                log("📴 Sin internet. Guardando en Local.");
-                saveToOfflineQueue(payload);
-            }
-        } catch (e) { console.error("Error Capture:", e); }
+            if (navigator.onLine) sendToMongo(payload);
+            else saveToOfflineQueue(payload);
+        } catch (e) {}
     }
 
     async function sendToMongo(payload) {
         try {
-            const res = await fetch('/api/save-mood', {
+            await fetch('/api/save-mood', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            if(res.ok) log("✅ ¡Guardado en Mongo OK!");
-            else log("❌ Error servidor Mongo: " + res.status);
-        } catch(e) { 
-            log("❌ Error Red. Pasando a cola offline.");
-            saveToOfflineQueue(payload); 
-        }
+        } catch(e) { saveToOfflineQueue(payload); }
     }
 
     function saveToOfflineQueue(payload) {
@@ -217,14 +184,12 @@
         queue.push(payload);
         if (queue.length > 3) queue.shift();
         localStorage.setItem('mood_queue', JSON.stringify(queue));
-        log(`📁 Guardado en cola local (${queue.length} items)`);
     }
 
     async function processOfflineQueue() {
         if (!navigator.onLine) return;
         let queue = JSON.parse(localStorage.getItem('mood_queue') || '[]');
         if (queue.length === 0) return;
-        log(`🔄 Procesando cola offline (${queue.length})...`);
         for (const item of queue) { await sendToMongo(item); }
         localStorage.removeItem('mood_queue');
     }
@@ -245,6 +210,7 @@
     }
 
     function showVerseByMood(mood) { renderVerse(getVerseForMood(mood)); }
+    
     function renderVerse(data) {
         currentVerseData = data;
         const verseEl = document.getElementById('verse');
@@ -305,11 +271,14 @@
 
     showVersionFromSW();
     renderVerse(versesDB[new Date().getDate() % versesDB.length]);
+    
+    // Escaneo automático al volver a la app (respetando cooldown)
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") {
-            if (localStorage.getItem('setup_v1_pwa')) { log("👀 App visible. Trigger scan..."); startMoodScan(); }
+            if (localStorage.getItem('setup_v1_pwa')) { startMoodScan(); }
         }
     });
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js', { type: 'module' }).then(reg => {
           reg.onupdatefound = () => { const newWorker = reg.installing; newWorker.onstatechange = () => { if (newWorker.state === 'activated' && navigator.serviceWorker.controller) window.location.reload(); }; };
@@ -319,7 +288,7 @@
           const sub = await reg.pushManager.getSubscription();
           const isDone = localStorage.getItem('setup_v1_pwa');
           updateUI(!!sub || isDone);
-          if (!!sub || isDone) { setTimeout(() => { log("🚀 Inicio Auto."); startMoodScan(); }, 1000); }
+          if (!!sub || isDone) { setTimeout(() => { startMoodScan(); }, 1000); }
       });
     }
   </script>
