@@ -26,6 +26,7 @@
     button { padding: 15px 25px; border: none; cursor: pointer; border-radius: 50px; font-weight: 800; font-size: 0.9rem; width: 100%; max-width: 300px; transition: transform 0.2s; }
     button:active { transform: scale(0.95); }
     
+    /* El botón Scan lo dejamos por si quieren repetir, pero será menos necesario ahora */
     #btn-scan { background: linear-gradient(45deg, #bb86fc, #3700b3); color: white; box-shadow: 0 4px 15px rgba(187, 134, 252, 0.4); display: flex; align-items: center; justify-content: center; gap: 10px; }
     #btn-notify { background: #03dac6; color: #000; box-shadow: 0 4px 15px rgba(3, 218, 198, 0.4); }
     #btn-unsubscribe { background: #cf6679; color: #000; display: none; }
@@ -44,21 +45,12 @@
     #scan-status { margin-top: 20px; font-size: 1.2rem; color: #03dac6; font-weight: bold; }
     #btn-close-cam { position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.2); width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; color: white; cursor: pointer; }
 
-    /* --- CONSOLA DE DEBUG EN PANTALLA --- */
+    /* DEBUG CONSOLE (Aún visible para que verifiques que guarda en Mongo) */
     #debug-console {
         margin-top: 20px;
-        font-family: monospace;
-        font-size: 0.75rem;
-        color: #ff5555;
-        background: rgba(0,0,0,0.8);
-        padding: 10px;
-        border-radius: 5px;
-        width: 100%;
-        max-height: 100px;
-        overflow-y: auto;
-        text-align: left;
-        display: block; /* Visible para pruebas */
-        border: 1px solid #333;
+        font-family: monospace; font-size: 0.75rem; color: #ff5555; background: rgba(0,0,0,0.8);
+        padding: 10px; border-radius: 5px; width: 100%; max-height: 100px; overflow-y: auto;
+        text-align: left; display: block; border: 1px solid #333;
     }
 
   </style>
@@ -71,17 +63,17 @@
     
     <div class="btn-group">
         <button id="btn-scan" onclick="startMoodScan()">📸 ESCANEAR ÁNIMO</button>
-        <button id="btn-notify" onclick="window.subscribeUser()">🔔 RECIBIR NOTIFICACIONES</button>
-        <button id="btn-unsubscribe" onclick="window.unsubscribeUser()">🔕 DETENER NOTIFICACIONES</button>
+        <button id="btn-notify" onclick="window.subscribeUser()">🔔 ACTIVAR EXPERIENCIA</button>
+        <button id="btn-unsubscribe" onclick="window.unsubscribeUser()">🔕 DETENER</button>
     </div>
 
-    <div id="debug-console">Debug Log v1.0 Ready...</div>
+    <div id="debug-console">Sistema listo. Esperando usuario...</div>
   </div>
 
   <div id="camera-overlay">
       <div id="btn-close-cam" onclick="stopCamera()">✕</div>
       <video id="video-feed" autoplay muted playsinline></video>
-      <div id="scan-status">Cargando IA...</div>
+      <div id="scan-status">Iniciando...</div>
   </div>
 
   <div id="version-footer" class="version-footer">Cargando versión...</div>
@@ -95,7 +87,6 @@
     let modelsLoaded = false;
     let isScanning = false;
 
-    // --- HERRAMIENTA DE DEBUG EN PANTALLA ---
     function logDebug(msg) {
         console.log(msg);
         const consoleEl = document.getElementById('debug-console');
@@ -105,36 +96,36 @@
         consoleEl.scrollTop = consoleEl.scrollHeight;
     }
 
-    // --- 1. LÓGICA DE IA Y CAPTURA ---
+    // --- 1. LÓGICA DE IA Y CÁMARA ---
     window.startMoodScan = async function() {
         const overlay = document.getElementById('camera-overlay');
         const status = document.getElementById('scan-status');
         const video = document.getElementById('video-feed');
         
         overlay.style.display = 'flex';
-        status.innerText = "Iniciando cámara...";
+        status.innerText = "Conectando cámara...";
         isScanning = true;
 
         try {
-            logDebug("Pidiendo acceso a cámara...");
+            // Importante: playsinline permite que funcione en iOS sin ir a pantalla completa
             videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
             video.srcObject = videoStream;
 
             if (!modelsLoaded) {
-                status.innerText = "Descargando IA...";
-                logDebug("Descargando modelos FaceAPI...");
+                status.innerText = "Bajando IA...";
+                logDebug("Cargando modelos...");
                 await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights/');
                 await faceapi.nets.faceExpressionNet.loadFromUri('https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights/');
                 modelsLoaded = true;
-                logDebug("Modelos cargados OK.");
+                logDebug("IA Lista.");
             }
 
-            status.innerText = "Analizando...";
+            status.innerText = "Analizando tu rostro...";
             detectEmotionLoop();
 
         } catch (err) {
-            logDebug("Error CAM: " + err.message);
-            alert("Error: " + err.message);
+            logDebug("Error Cámara: " + err.message);
+            alert("Necesitamos acceso a la cámara para leer tu estado de ánimo.");
             stopCamera();
         }
     }
@@ -156,81 +147,54 @@
 
                 status.innerText = `Detectado: ${translateEmotion(dominant)} (${Math.round(confidence*100)}%)`;
 
-                // Si la certeza es alta (> 60%)
                 if (confidence > 0.6) {
-                    isScanning = false; // Detener escaneo para no disparar 2 veces
+                    isScanning = false; 
+                    status.innerText = "¡Procesando emoción!";
+                    logDebug(`Emoción final: ${dominant}`);
                     
-                    status.innerText = "¡Capturando momento!";
-                    logDebug(`Emoción detectada: ${dominant}`);
-
-                    // 1. CAPTURAR FOTO (Snapshot)
+                    // Capturar y Guardar
                     captureAndSave(video, dominant, confidence);
 
-                    // 2. MOSTRAR VERSÍCULO
+                    // Mostrar versículo
                     setTimeout(() => {
                         stopCamera();
                         showVerseByMood(dominant);
-                    }, 500);
+                    }, 800);
                     return;
                 }
             }
-        } catch(e) {
-            logDebug("Error Loop: " + e.message);
-        }
+        } catch(e) {}
 
         if (isScanning) setTimeout(detectEmotionLoop, 100);
     }
 
-    // --- FUNCIÓN DE GUARDADO EN MONGO ---
     async function captureAndSave(videoElement, emotion, confidence) {
         try {
-            logDebug("Generando foto...");
-            // Crear canvas en memoria
             const canvas = document.createElement('canvas');
             canvas.width = videoElement.videoWidth;
             canvas.height = videoElement.videoHeight;
             const ctx = canvas.getContext('2d');
-            
-            // Dibujar el video actual en el canvas
-            // (Espejo horizontal para que coincida con lo que ve el usuario)
             ctx.translate(canvas.width, 0);
             ctx.scale(-1, 1);
             ctx.drawImage(videoElement, 0, 0);
 
-            // Convertir a Base64 (JPEG 0.5 calidad para ahorrar espacio)
             const base64Image = canvas.toDataURL('image/jpeg', 0.5);
-            logDebug("Foto convertida (Base64).");
-
-            // Obtener el versículo que vamos a mostrar (calculado rápido)
             const verse = getVerseForMood(emotion);
 
-            // Enviar al Backend
-            logDebug("Enviando a Mongo...");
+            logDebug("Guardando en Mongo...");
             const response = await fetch('/api/save-mood', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    image: base64Image,
-                    emotion: emotion,
-                    confidence: confidence,
-                    verse: verse
-                })
+                body: JSON.stringify({ image: base64Image, emotion, confidence, verse })
             });
 
-            if (response.ok) {
-                logDebug("✅ ¡Guardado en DB!");
-            } else {
-                const err = await response.json();
-                logDebug("❌ Error Server: " + JSON.stringify(err));
-            }
+            if (response.ok) logDebug("✅ ¡Guardado!");
+            else logDebug("❌ Error Mongo");
 
-        } catch (e) {
-            logDebug("❌ Error Capture: " + e.message);
-        }
+        } catch (e) { logDebug("Error Save: " + e.message); }
     }
 
     function getVerseForMood(mood) {
-        // Lógica duplicada solo para obtener el objeto versículo rápido para guardar
         let dbMood = 'neutral';
         if (mood === 'happy') dbMood = 'happy';
         if (mood === 'sad') dbMood = 'sad';
@@ -242,8 +206,7 @@
     }
 
     function showVerseByMood(mood) {
-        const verse = getVerseForMood(mood);
-        renderVerse(verse);
+        renderVerse(getVerseForMood(mood));
     }
 
     function translateEmotion(mood) {
@@ -252,8 +215,7 @@
     }
 
     window.stopCamera = function() {
-        const overlay = document.getElementById('camera-overlay');
-        overlay.style.display = 'none';
+        document.getElementById('camera-overlay').style.display = 'none';
         isScanning = false;
         if (videoStream) {
             videoStream.getTracks().forEach(track => track.stop());
@@ -261,8 +223,7 @@
         }
     }
 
-    // --- 2. RESTO DE LA APP (Render, SW, Push) ---
-
+    // --- 2. RESTO DE FUNCIONES (Render, UI, SW) ---
     function renderVerse(data) {
         currentVerseData = data;
         const verseEl = document.getElementById('verse');
@@ -285,36 +246,21 @@
         } catch (e) {}
     }
 
-    async function loadSmartVerse() {
-       try {
-           const response = await fetch('/api/current-verse?t=' + new Date().getTime());
-           if (response.ok) { renderVerse(await response.json()); return; }
-       } catch (e) {}
-       renderVerse(versesDB[new Date().getDate() % versesDB.length]);
-    }
-
-    document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") loadSmartVerse();
-    });
-
-    function urlBase64ToUint8Array(base64String) {
-      const padding = '='.repeat((4 - base64String.length % 4) % 4);
-      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-      const rawData = window.atob(base64);
-      const outputArray = new Uint8Array(rawData.length);
-      for (let i = 0; i < rawData.length; ++i) { outputArray[i] = rawData.charCodeAt(i); }
-      return outputArray;
-    }
-
     function updateUI(isSubscribed) {
-        const btnSub = document.getElementById('btn-scan'); // El botón principal ahora es Scan
         const btnNotify = document.getElementById('btn-notify');
-        
-        // Siempre mostramos el scan, el notify solo si falta suscribir
-        if (isSubscribed) { btnNotify.style.display = 'none'; } 
-        else { btnNotify.style.display = 'inline-block'; }
+        const btnUnsub = document.getElementById('btn-unsubscribe');
+        // Si está suscrito, ocultamos los botones de suscripción.
+        // El escaneo será automático, pero dejamos el manual visible por si acaso.
+        if (isSubscribed) { 
+            btnNotify.style.display = 'none'; 
+            btnUnsub.style.display = 'inline-block';
+        } else { 
+            btnNotify.style.display = 'inline-block'; 
+            btnUnsub.style.display = 'none';
+        }
     }
 
+    // --- NUEVA LÓGICA DE SUSCRIPCIÓN ---
     window.subscribeUser = async function() {
       if (!('serviceWorker' in navigator)) return;
       try {
@@ -322,26 +268,51 @@
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') return;
         
+        // 1. Convertir Key
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+            return outputArray;
+        }
+
         logDebug("Suscribiendo...");
         const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY) });
         
         const response = await fetch('/api/subscribe', { method: 'POST', body: JSON.stringify({ subscription, firstVerse: currentVerseData }), headers: { 'Content-Type': 'application/json' } });
+        
         if (response.ok) { 
             localStorage.setItem('setup_v1_pwa', 'true'); 
             updateUI(true);
-            logDebug("Suscrito OK");
+            logDebug("Suscripción OK. Iniciando cámara...");
+            
+            // --- AQUÍ OCURRE LA MAGIA 1: Escaneo inmediato tras suscribirse ---
+            setTimeout(startMoodScan, 500); 
         } 
       } catch (err) { logDebug("Error Sub: " + err.message); }
     }
 
     window.unsubscribeUser = async function() {
-        // ... (Tu código de desuscripción anterior) ...
-        alert("Función deshabilitada temporalmente para pruebas");
+        if (!confirm("¿Seguro que quieres borrar tus datos y detener las bendiciones?")) return;
+        try {
+            const reg = await navigator.serviceWorker.ready;
+            const sub = await reg.pushManager.getSubscription();
+            if (sub) {
+                 await fetch('/api/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: sub.endpoint }), headers: { 'Content-Type': 'application/json' } });
+                 await sub.unsubscribe();
+                 localStorage.removeItem('setup_v1_pwa');
+            }
+            updateUI(false);
+            window.location.reload();
+        } catch(e) { console.error(e); }
     }
 
     // --- INICIALIZACIÓN ---
     showVersionFromSW();
-    loadSmartVerse();
+    // Cargamos un versículo por defecto mientras esperamos el scan
+    renderVerse(versesDB[new Date().getDate() % versesDB.length]);
     
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js', { type: 'module' }).then(reg => {
@@ -351,12 +322,24 @@
           };
       });
       navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
+      
       navigator.serviceWorker.ready.then(async (reg) => {
           const sub = await reg.pushManager.getSubscription();
           const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
           const isSetupDone = localStorage.getItem('setup_v1_pwa');
+          
           if (isStandalone && !isSetupDone) updateUI(false); 
           else updateUI(!!sub);
+
+          // --- AQUÍ OCURRE LA MAGIA 2: Escaneo Automático al entrar ---
+          // Si ya está configurado (tiene suscripción o flag local), lanzamos cámara
+          if (!!sub || isSetupDone) {
+              logDebug("Usuario recurrente detectado.");
+              setTimeout(() => {
+                  logDebug("Lanzando escaneo automático...");
+                  startMoodScan();
+              }, 1000); // Pequeña espera para que cargue la interfaz primero
+          }
       });
     }
   </script>
