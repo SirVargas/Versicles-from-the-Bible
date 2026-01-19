@@ -1,4 +1,4 @@
-const CACHE_NAME = 'biblia-v31-Fullscreen'; // Subimos versión
+const CACHE_NAME = 'biblia-v32-add-logic'; // Subimos versión
 const urlsToCache = [
   '/',                
   './index.html',
