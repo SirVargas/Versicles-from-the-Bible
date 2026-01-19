@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -23,10 +22,9 @@
     .analyzing { animation: pulseText 1.5s infinite ease-in-out; }
     @keyframes pulseText { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
 
-    /* EL BOTÓN DE INICIO */
+    /* --- BOTÓN DE BIENVENIDA --- */
     .btn-group { display: flex; flex-direction: column; gap: 15px; margin-top: 30px; align-items: center; min-height: 60px; }
     
-    /* Diseño llamativo para la primera vez */
     #btn-notify { 
         background: linear-gradient(45deg, #03dac6, #018786); 
         color: #000; 
@@ -40,11 +38,9 @@
         width: 100%; 
         max-width: 300px; 
         transition: transform 0.2s;
-        display: none; /* Oculto por defecto hasta comprobar estado */
+        display: none; /* Se muestra solo si falta el permiso */
     }
     #btn-notify:active { transform: scale(0.95); }
-
-    #btn-unsubscribe { background: #cf6679; color: #000; border: none; padding: 10px 20px; border-radius: 50px; cursor: pointer; display: none; margin-top: 20px; font-size: 0.8rem; }
 
     .version-footer { position: fixed; bottom: 5px; width: 100%; text-align: center; font-size: 0.7rem; color: #555; pointer-events: none; }
     #hidden-camera-container { position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; z-index: -100; pointer-events: none; }
@@ -57,9 +53,7 @@
     <div id="reference"></div>
     
     <div class="btn-group">
-        <button id="btn-notify" onclick="handleFirstSetup()">✨ INICIAR EXPERIENCIA</button>
-        
-        <button id="btn-unsubscribe" onclick="window.unsubscribeUser()">Reiniciar Configuración</button>
+        <button id="btn-notify" onclick="handleNotificationSetup()">🔔 ACTIVAR NOTIFICACIONES</button>
     </div>
   </div>
 
@@ -82,18 +76,86 @@
     const SCAN_COOLDOWN = 15000; 
     const SCAN_TIMEOUT = 5000;
 
-    // --- LÓGICA DE BOTÓN INTELIGENTE ---
-    window.handleFirstSetup = function() {
-        // 1. Pedir permisos de notificación
-        window.subscribeUser().then(() => {
-            // 2. Si aceptó, ocultamos el botón inmediatamente
-            document.getElementById('btn-notify').style.display = 'none';
-            // 3. Lanzamos el primer escaneo (que pedirá cámara)
-            startMoodScan(true);
+    // --- 1. LÓGICA DEL BOTÓN (SOLO NOTIFICACIONES) ---
+    window.handleNotificationSetup = function() {
+        // Al hacer clic, pedimos permiso de NOTIFICACIÓN (que requiere gesto de usuario)
+        window.subscribeUser().then((success) => {
+            if (success) {
+                // Si aceptó, ocultamos el botón
+                document.getElementById('btn-notify').style.display = 'none';
+                
+                // Y arrancamos la cámara (si ya tiene permiso, será invisible; si no, pedirá ahí mismo)
+                startMoodScan(true);
+            }
         });
     }
 
-    // --- IA LOGIC (Invisible) ---
+    // --- 2. GESTIÓN DE SUSCRIPCIÓN ---
+    window.subscribeUser = async function() {
+      if (!('serviceWorker' in navigator)) return false;
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        
+        // El navegador mostrará el popup nativo "¿Permitir notificaciones?"
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+            alert("Necesitamos las notificaciones para enviarte tu versículo diario.");
+            return false; 
+        }
+        
+        // Conversión de clave VAPID
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+            return outputArray;
+        }
+
+        // Suscribir
+        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY) });
+        
+        // Guardar en Backend
+        await fetch('/api/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub, firstVerse: currentVerseData }), headers: { 'Content-Type': 'application/json' } });
+        
+        // Marcar configuración local
+        localStorage.setItem('setup_v1_pwa', 'true'); 
+        return true;
+      } catch (err) { 
+          console.error(err); 
+          return false;
+      }
+    }
+
+    // --- 3. INICIALIZACIÓN INTELIGENTE ---
+    async function initApp() {
+        showVersionFromSW();
+        renderVerse(versesDB[new Date().getDate() % versesDB.length]);
+
+        if ('serviceWorker' in navigator) {
+            const reg = await navigator.serviceWorker.register('sw.js', { type: 'module' });
+            reg.onupdatefound = () => { const nw = reg.installing; nw.onstatechange = () => { if (nw.state === 'activated' && navigator.serviceWorker.controller) window.location.reload(); }; };
+            navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
+
+            // --- CHEQUEO CLAVE ---
+            const sub = await reg.pushManager.getSubscription();
+            const btnNotify = document.getElementById('btn-notify');
+
+            if (sub) {
+                // CASO 1: YA TIENE NOTIFICACIONES (Usuario Recurrente)
+                // Ocultamos botón y arrancamos magia directa
+                btnNotify.style.display = 'none';
+                setTimeout(() => startMoodScan(), 1000);
+            } else {
+                // CASO 2: NO TIENE NOTIFICACIONES (Instalación Nueva)
+                // Mostramos botón para pedir permiso
+                btnNotify.style.display = 'block';
+            }
+        }
+    }
+
+    // --- IA LOGIC (CÁMARA INVISIBLE) ---
     window.startMoodScan = async function(force = false) {
         if (isScanning) return;
         const now = Date.now();
@@ -104,7 +166,10 @@
         document.getElementById('reference').classList.add('analyzing');
 
         try {
+            // Si el usuario ya dio permiso de cámara antes, esto pasa transparente.
+            // Si no, el navegador mostrará el popup de cámara aquí.
             videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+            
             const video = document.getElementById('video-feed');
             video.srcObject = videoStream;
             await video.play().catch(() => {});
@@ -192,6 +257,7 @@
     // --- UTILIDADES ---
     window.addEventListener('online', processOfflineQueue);
     window.addEventListener('load', processOfflineQueue);
+    window.unsubscribeUser = async function() { /* Lógica de reset si se necesita */ };
 
     function getVerseForMood(mood) {
         let dbMood = 'neutral';
@@ -223,80 +289,15 @@
             if (match && match[1]) document.getElementById('version-footer').innerText = `App: ${match[1].replace('biblia-', '')}`;
         } catch (e) {}
     }
-    
-    // UI & SUBSCRIBE
-    window.subscribeUser = async function() {
-      if (!('serviceWorker' in navigator)) return;
-      try {
-        const reg = await navigator.serviceWorker.ready;
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') return; // Si niega, el botón sigue ahí
-        
-        function urlBase64ToUint8Array(base64String) {
-            const padding = '='.repeat((4 - base64String.length % 4) % 4);
-            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-            const rawData = window.atob(base64);
-            const outputArray = new Uint8Array(rawData.length);
-            for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
-            return outputArray;
-        }
-        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY) });
-        await fetch('/api/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub, firstVerse: currentVerseData }), headers: { 'Content-Type': 'application/json' } });
-        localStorage.setItem('setup_v1_pwa', 'true'); 
-        return true;
-      } catch (err) { console.error(err); }
-    }
 
-    window.unsubscribeUser = async function() {
-        if (!confirm("¿Reiniciar la app como si fuera nueva?")) return;
-        try {
-            const reg = await navigator.serviceWorker.ready;
-            const sub = await reg.pushManager.getSubscription();
-            if (sub) { await fetch('/api/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: sub.endpoint }), headers: { 'Content-Type': 'application/json' } }); await sub.unsubscribe(); }
-            localStorage.removeItem('setup_v1_pwa');
-            window.location.reload();
-        } catch(e) { console.error(e); }
-    }
-
-    // --- CORTE DE CÁMARA AL MINIMIZAR (Evita notificaciones permanentes) ---
+    // --- CORTE DE CÁMARA (PRIVACIDAD) ---
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") {
             stopCamera(); isScanning = false;
         } else if (document.visibilityState === "visible") {
-            // Solo escaneamos automáticamente si YA está configurado
             if (localStorage.getItem('setup_v1_pwa')) startMoodScan(); 
         }
     });
-
-    // --- INICIALIZACIÓN INTELIGENTE (INIT APP) ---
-    async function initApp() {
-        showVersionFromSW();
-        renderVerse(versesDB[new Date().getDate() % versesDB.length]);
-
-        if ('serviceWorker' in navigator) {
-            const reg = await navigator.serviceWorker.register('sw.js', { type: 'module' });
-            reg.onupdatefound = () => { const nw = reg.installing; nw.onstatechange = () => { if (nw.state === 'activated' && navigator.serviceWorker.controller) window.location.reload(); }; };
-            navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
-
-            const sub = await reg.pushManager.getSubscription();
-            const isSetup = localStorage.getItem('setup_v1_pwa');
-
-            // LÓGICA MAESTRA DEL BOTÓN
-            const btnNotify = document.getElementById('btn-notify');
-            const btnUnsub = document.getElementById('btn-unsubscribe');
-
-            if (sub || isSetup) {
-                // YA ES USUARIO -> MODO MAGIA (Sin botón)
-                btnNotify.style.display = 'none';
-                btnUnsub.style.display = 'none'; // Puedes poner 'block' si quieres que puedan resetear
-                setTimeout(() => startMoodScan(), 1000);
-            } else {
-                // NUEVO USUARIO -> MODO ONBOARDING (Botón visible)
-                btnNotify.style.display = 'block';
-                btnUnsub.style.display = 'none';
-            }
-        }
-    }
 
     // Arrancamos
     initApp();
